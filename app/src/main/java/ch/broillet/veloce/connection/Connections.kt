@@ -1,0 +1,60 @@
+package ch.broillet.veloce.connection
+
+import android.content.Context
+import android.content.Intent
+import android.hardware.usb.UsbAccessory
+import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+
+data class ConnectionState(
+    val active: Boolean = false,
+    val detail: String = "Ready to connect",
+    val identityReady: Boolean = false,
+    val preparing: Boolean = false,
+    val error: Boolean = false,
+)
+
+class Connections(private val context: Context) {
+    val identity = IdentityStore(context)
+    private val mutable = MutableStateFlow(ConnectionState(identityReady = identity.exists))
+    val state = mutable.asStateFlow()
+    private val lines = ArrayDeque<String>()
+
+    fun update(detail: String, active: Boolean, error: Boolean = false) {
+        log(detail)
+        mutable.update { it.copy(detail = detail, active = active, error = error) }
+    }
+
+    fun prepare() {
+        mutable.update { it.copy(preparing = true, error = false) }
+        try {
+            identity.installDefault()
+            mutable.update { it.copy(identityReady = true, preparing = false, detail = "Default car certificate installed") }
+            log("Default aasdk identity installed and verified")
+        } catch (error: Exception) {
+            mutable.update { it.copy(preparing = false, error = true, detail = "Certificate setup failed: ${error.message}") }
+            log("Certificate setup failed: ${error.javaClass.simpleName}")
+        }
+    }
+
+    fun usb(accessory: UsbAccessory) = start(Intent(context, ConnectionService::class.java).putExtra("usb", accessory))
+    fun wireless(address: String) = start(Intent(context, ConnectionService::class.java).putExtra("wireless", address))
+    fun disconnect() { context.startService(Intent(context, ConnectionService::class.java).setAction("disconnect")) }
+
+    private fun start(intent: Intent) {
+        if (!identity.exists) { update("Set up the car certificate before connecting", false, true); return }
+        context.startForegroundService(intent)
+    }
+
+    @Synchronized fun log(message: String) {
+        Log.i("Veloce", message)
+        if (lines.size == 200) lines.removeFirst()
+        lines.addLast("${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))} $message")
+    }
+
+    @Synchronized fun diagnostics(): String = lines.joinToString("\n").ifBlank { "No connection attempts yet." }
+}
