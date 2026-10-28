@@ -28,24 +28,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
-import ch.broillet.veloce.VeloceApplication
-import ch.broillet.veloce.apps.CarApp
-import ch.broillet.veloce.ui.CarNavigation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun CarAppContent(app: CarApp, navigation: CarNavigation, modifier: Modifier) {
-    val context = LocalContext.current
-    val host = remember(app.component) {
-        CarAppHost(context, app, navigation::home, (context.applicationContext as VeloceApplication).connections::log)
-    }
-    DisposableEffect(host) {
-        navigation.appBack = host::back
-        host.connect()
-        onDispose { navigation.appBack = null; host.close() }
-    }
-    LaunchedEffect(host, navigation.projected) { host.setVisible(navigation.projected) }
+fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         host.notice?.let { message ->
             Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -59,10 +46,10 @@ fun CarAppContent(app: CarApp, navigation: CarNavigation, modifier: Modifier) {
         val template = host.template
         when {
             failure != null -> Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.Center) {
-                Text("Could not open ${app.label}", style = MaterialTheme.typography.titleLarge)
+                Text("Could not open ${host.app.label}", style = MaterialTheme.typography.titleLarge)
                 Text(failure, maxLines = 5, overflow = TextOverflow.Ellipsis)
                 Text("Check the app’s host-validation patch and Car App Library compatibility. Details are in the connection log.")
-                TextButton(onClick = navigation::home) { Text("Home") }
+                TextButton(onClick = home) { Text("Home") }
             }
             template == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else -> TemplateContent(template, host, Modifier.fillMaxWidth().weight(1f))

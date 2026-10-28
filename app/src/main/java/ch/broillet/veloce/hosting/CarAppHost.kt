@@ -34,6 +34,7 @@ class CarAppHost(
     val app: CarApp,
     private val finish: () -> Unit,
     private val log: (String) -> Unit,
+    private val home: () -> Unit = finish,
 ) : Closeable {
     private val context = displayContext.applicationContext
     private val configuration = Configuration(displayContext.resources.configuration).apply {
@@ -58,7 +59,8 @@ class CarAppHost(
     private val ownedSurfaces = mutableSetOf<SurfaceContainer>()
     private var visibleArea = Rect()
     private var alertTimer: Job? = null
-    private var navigating = false
+    var navigating by mutableStateOf(false)
+        private set
     var template by mutableStateOf<Template?>(null)
         private set
     var error by mutableStateOf<String?>(null)
@@ -130,9 +132,11 @@ class CarAppHost(
         override fun sendLocation(location: Location?) { enforceCaller() }
         override fun showAlert(bundle: Bundleable) = fromApp {
             val incoming = bundle.get() as Alert
-            if (template !is NavigationTemplate) {
-                event { incoming.callbackDelegate?.sendCancel(AlertCallback.REASON_NOT_SUPPORTED, it) }
-                event { incoming.callbackDelegate?.sendDismiss(it) }
+            if (!visible || template !is NavigationTemplate) {
+                incoming.callbackDelegate?.let { delegate ->
+                    event { delegate.sendCancel(AlertCallback.REASON_NOT_SUPPORTED, it) }
+                    event { delegate.sendDismiss(it) }
+                }
             } else if (alert?.id != incoming.id) {
                 dismissAlert()
                 alert = incoming
@@ -197,7 +201,9 @@ class CarAppHost(
     }
 
     fun setVisible(value: Boolean) {
+        if (closed || visible == value) return
         visible = value
+        if (!value) dismissAlert(AlertCallback.REASON_NOT_SUPPORTED)
         scope.launch {
             try { lifecycle.withLock { updateLifecycle() } }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -230,7 +236,7 @@ class CarAppHost(
     fun click(action: Action) {
         when (action.type) {
             Action.TYPE_BACK -> back()
-            Action.TYPE_APP_ICON -> finish()
+            Action.TYPE_APP_ICON -> home()
             else -> click(action.onClickDelegate)
         }
     }
@@ -252,12 +258,25 @@ class CarAppHost(
 
     fun dismissNotice() { notice = null }
 
+    fun stopNavigation() {
+        val endpoint = navigation ?: return
+        scope.launch {
+            try {
+                appCalls.withLock { request { endpoint.onStopNavigation(it) } }
+                navigating = false
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { fail(failure) }
+        }
+    }
+
     fun dismissAlert(reason: Int? = null) {
         val previous = alert ?: return
         alert = null
         alertTimer?.cancel()
-        if (reason != null) event { previous.callbackDelegate?.sendCancel(reason, it) }
-        event { previous.callbackDelegate?.sendDismiss(it) }
+        previous.callbackDelegate?.let { delegate ->
+            if (reason != null) event { delegate.sendCancel(reason, it) }
+            event { delegate.sendDismiss(it) }
+        }
     }
 
     fun surfaceAvailable(target: SurfaceContainer) {
@@ -352,11 +371,13 @@ class CarAppHost(
         val appNavigation = navigation
         val callback = surfaceCallback
         val target = surface
+        val wasNavigating = navigating
+        navigating = false
         scope.launch {
             try { withTimeoutOrNull(2_000) {
                 if (callback != null && target != null) runCatching { request { callback.onSurfaceDestroyed(Bundleable.create(target), it) } }
                 if (endpoint != null && created) {
-                    if (navigating && appNavigation != null) runCatching { request { appNavigation.onStopNavigation(it) } }
+                    if (wasNavigating && appNavigation != null) runCatching { request { appNavigation.onStopNavigation(it) } }
                     if (resumed) runCatching { request { endpoint.onAppPause(it) } }
                     if (started) runCatching { request { endpoint.onAppStop(it) } }
                 }

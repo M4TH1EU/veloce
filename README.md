@@ -9,17 +9,77 @@ Android 14+, with no Google Play services or root dependency.
 - TLS authentication using a one-time download of the public aasdk identity.
 - Display discovery, H.264 video projection, touch, and directional input.
 - Car-screen launcher with discovered app tiles and active media controls.
+- In-app AndroidX Car App Library host with template rendering and navigation map surfaces.
+- Retained navigation sessions and paged media-library browsing with playback controls.
 - The same car UI in a real virtual-display preview with preset/custom resolution and DPI.
 - Phone-side setup, connection status, disconnect action, and shareable local diagnostics.
 
-Physical car compatibility is awaiting validation. The implementation has been
-reviewed against public protocol contracts and Android API sources. Desktop tests
-simulate a head unit; they do not establish that a car accepts the identity or that
-Android renders and encodes the launcher correctly.
+The owner has tested basic launcher projection over both USB and wireless.
+App hosting and the remaining hardware workflows still need device validation.
+Desktop tests do not establish compatibility with a particular head unit or app build.
 
-Opening navigation/templated app interfaces, media-library browsing, and forwarded
-audio are subsequent steps. Audio tiles can control an already active media session;
-other tiles explain that their app host is still being implemented.
+Templated app tiles open their AndroidX car interface in Veloce. Audio tiles
+connect to the app's media library when permitted, with active-session controls
+as a fallback. Audio forwarding is not implemented.
+
+## Car app hosting (experimental)
+
+The host is part of the main app, shared by car projection and **Car preview**.
+No companion APK or test app is required. It uses the official AndroidX Car App
+Library 1.7.0 contracts, negotiating a common Car App API level up to 7.
+
+Implemented interfaces:
+
+- Service binding, host handshake, lifecycle, invalidation, app actions, and Back.
+- List, grid, pane, message, long-message, search, and tab templates.
+- NavigationTemplate, MapWithContentTemplate, and the older MapTemplate,
+  PlaceListNavigationTemplate, and RoutePreviewNavigationTemplate.
+- TextureView-backed map surfaces, dimensions/DPI, visible/stable areas,
+  tap/scroll/fling/pinch callbacks, and pan-mode actions.
+- Navigation alerts, content limits, and on-screen errors with diagnostic logs.
+
+This is a template subset, not full Car App API conformance. Sign-in is directed
+to the phone; host-drawn POI maps, hardware APIs, microphone/voice input, cluster
+forwarding, cross-app launches, and the global CarConnection provider are absent.
+The host uses the same fixed night configuration as Veloce's UI. Parked-only
+actions are blocked because vehicle parked status is not available. Search uses
+Android's text input; a car-specific keyboard is not implemented.
+Home and music pages keep the current templated app bound, pausing its UI and
+releasing its map surface while hidden. An active route offers **Return to…**
+and **Stop route** controls. Reopening the same app resumes the existing session.
+Opening another templated app or disconnecting closes the old session and stops
+its navigation. Background location/guidance still depends on the navigation
+app's own implementation and permissions; locked-phone behavior is unverified.
+
+Patched Waze/Google Maps builds must expose an exported AndroidX `CarAppService`
+and accept Veloce's host identity. A Morphe host-validation patch alone does not
+prove this; legacy/proprietary car interfaces are not supported by this host.
+Exact patched-build compatibility has not yet been tested.
+
+To test, open a patched map app in **Car preview**, then on the head unit. Check
+map rendering, actions, route selection, gestures, Back, native-screen return and
+re-entry, and disconnect/reconnect. Complete sign-in and location permissions on
+the phone while parked. If it fails, share the connection log and exact app/patch
+versions. An app absent from the launcher may not expose a supported service.
+
+## Media libraries
+
+One Media3 browser supports both Media3 library services and legacy Android
+media-browser services. It provides folders, Back, 40-item pages, live child
+updates, playback by media ID, and the session's available play/pause/skip controls.
+Library navigation is retained through Home and map switching until another
+audio app is selected or the projected display closes. Releasing a browser does
+not pause the media app's playback.
+
+No Google host identity is spoofed. An app can reject browsing or individual
+commands. In that case, **Now playing** uses an existing session from the same
+package if notification access was granted. Start playback on the phone if no
+session is available. Spotify's actual browsing/access policy remains to be tested;
+neither browsing nor playback-capture access is guaranteed. Media search, artwork,
+queue editing, custom actions, shuffle/repeat, and projection audio are not yet implemented.
+
+Test a route → Home → music folders → play → return-to-map workflow, folder/page
+Back navigation, denied library access, and disconnects during library loading.
 
 ## Build
 
@@ -59,9 +119,9 @@ disconnect during setup, repeated reconnects, and locking the phone. In particul
 private-display visibility under keyguard and screen-off power behavior are still
 unverified. Start the first projection test with the phone unlocked.
 
-Optional media controls require notification access. Start playback in the media
-app first, then use the launcher's Now playing page. Audio forwarding over the
-projection link is not enabled in this build.
+Active-session fallback controls require notification access; a successfully
+connected media library supplies its own controller without that permission.
+Audio forwarding over the projection link is not enabled in this build.
 
 Notification contents are not read by Veloce. The listener is used to obtain active
 media sessions. It does not bypass an app's library-access or playback-capture policy.
@@ -71,8 +131,10 @@ media sessions. It does not bypass an app's library-access or playback-capture p
 - 23 protocol tests cover framing, real JDK TLS, channel negotiation, fragmented
   video payloads, plaintext/encrypted keepalive, acknowledgement backpressure,
   focus restart, rejected input binding, and car-initiated shutdown.
-- Two Android-module JVM tests cover touch-coordinate scaling and resource cleanup.
-  They do not exercise Android framework objects.
+- Android-module tests cover touch-coordinate scaling, resource cleanup, API negotiation,
+  AndroidX host binding/lifecycle/callbacks/errors/surfaces, retained navigation,
+  and Media3/legacy browsing and cancellation under Robolectric.
+  They do not validate actual third-party map drawing or car-screen rendering.
 - Projection uses the main H.264 display, supported standard resolutions up to
   1920 × 1080 (or 1080 × 1920), and the offered 30/60 fps configuration. Encoder
   support is device-dependent; automatic renegotiation after codec failure is absent.
@@ -80,14 +142,15 @@ media sessions. It does not bypass an app's library-access or playback-capture p
   Head-unit margin conventions, D-pad focus, and rotary traversal need car testing.
 - Wireless supports an IPv4 car endpoint and open/WPA/WPA2 personal Wi-Fi.
   Bluetooth bootstrap version fields are only partially described publicly;
-  real head-unit interoperability is unverified.
+  broader head-unit interoperability still needs testing.
 - **Disconnect** closes the transport promptly. Car-initiated shutdown is acknowledged;
   phone-initiated protocol goodbye negotiation is not implemented.
 
 ## Structure
 
 - `app`: phone setup, transports/session service, virtual-display rendering,
-  hardware encoding, car launcher, car-service discovery, and active media integration.
+  hardware encoding, car launcher, AndroidX template hosting, car-service discovery,
+  and active media integration.
 - `protocol`: framing, protobuf decoding, TLS, discovery, channel negotiation,
   bounded video flow control, and protocol tests without Android dependencies.
 - [Foundation brief](FOUNDATION.md): agreed scope, constraints, and primary references.

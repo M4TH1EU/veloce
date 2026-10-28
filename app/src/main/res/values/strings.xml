@@ -39,4 +39,11 @@
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="no_apps">No car apps found. Install an app with an Android Auto interface.</string>
+    <string name="resume_navigation">Return to %1$s</string>
+    <string name="stop_navigation">Stop route</string>
+    <string name="media_browse_denied">Browsing may be restricted by this app. Try Now playing; an existing session can also be controlled with notification access.</string>
+    <string name="media_empty">Nothing here yet</string>
+    <string name="media_page">Page %1$d</string>
+    <string name="retry">Retry</string>
+    <string name="refresh">Refresh</string>
 </resources>

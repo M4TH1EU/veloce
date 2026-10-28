@@ -9,8 +9,6 @@ import android.content.Intent
 import android.hardware.usb.UsbAccessory
 import android.os.IBinder
 import android.os.SystemClock
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.getValue
 import ch.broillet.veloce.MainActivity
 import ch.broillet.veloce.R
 import ch.broillet.veloce.VeloceApplication
@@ -170,8 +168,7 @@ class ConnectionService : Service() {
                         mode.touchWidth, mode.touchHeight)
                     window = ProjectedWindow(this@ConnectionService, prepared.surface, spec,
                         { navigation.back(::exit) }, navigation::home) {
-                        val track by app.media.nowPlaying.collectAsStateWithLifecycle()
-                        VeloceTheme { CarLauncher(spec, apps, track, navigation, app.media::control, ::exit) }
+                        VeloceTheme { CarLauncher(spec, apps, navigation, app.media, ::exit) }
                     }
                     prepared.start()
                     startedVideo = true

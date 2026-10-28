@@ -81,8 +81,7 @@ private fun PreviewSurface(model: HomeModel, spec: ScreenSpec, modifier: Modifie
                             val target = Surface(texture).also { surface = it }
                             projected = ProjectedWindow(context, target, spec, { navigation.back(close) }, navigation::home) {
                                 val catalog by model.state.collectAsStateWithLifecycle()
-                                val track by model.media.nowPlaying.collectAsStateWithLifecycle()
-                                VeloceTheme { CarLauncher(spec, catalog.apps, track, navigation, model.media::control, close) }
+                                VeloceTheme { CarLauncher(spec, catalog.apps, navigation, model.media, close) }
                             }
                         } catch (failure: Exception) {
                             release()

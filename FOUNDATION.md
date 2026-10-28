@@ -34,6 +34,10 @@ still requires validation against the intended patched navigation apps.
 - Car-initiated shutdown acknowledgement, native-focus handling, and local connection logs.
 - In-app AndroidX host: API negotiation up to 7, app lifecycle/actions, common
   templates, map surfaces/gestures, navigation alerts, and error diagnostics.
+- Per-display workspace retaining one templated app and one media browser through
+  Home/music/map switching; hidden UI does not stop an active navigation session.
+- Unified Media3/legacy library browsing with bounded pages, folder history,
+  child updates, media-ID playback, and package-specific active-session fallback.
 
 Twenty-three protocol tests include a simulated head unit completing real JDK TLS,
 channel negotiation, fragmented video packet delivery, keepalive, input, and shutdown.
@@ -42,7 +46,8 @@ Android rendering, encoder behavior, Bluetooth/Wi-Fi setup, and car acceptance h
 had an initial owner test, not exhaustive hardware validation. AndroidX host
 contracts now have Robolectric coverage; actual app hosting and forwarded audio
 still need further work and device validation. See README for the host subset and
-its explicit limitations, including fixed night mode and no background navigation.
+its explicit limitations, including fixed night mode and unverified background
+location/guidance behavior in the intended navigation builds.
 
 ## Implementation review
 
@@ -194,9 +199,12 @@ Default identity files are downloaded at runtime from the pinned public referenc
 with SHA-256 checksums, and are not bundled in the application or repository.
 
 The AndroidX host was independently implemented against the official 1.7.0
-source artifact and public navigation/map documentation. No reference-project
-implementation was used for this feature. Unit-test Binder endpoints live only
-in the app's test source set; no separate test application is built or required.
+source artifact and public navigation/map documentation. The subsequent session
+retention and media-browser work used official lifecycle documentation and Media3
+1.11.1 sources. Gearslip's disconnect and media-connection behavior was inspected
+for comparison; no implementation was imported. Unit-test Binder endpoints and
+media-service fixtures live only in the app's test source set; no separate test
+application is built or required.
 
 Host implementation references:
 
@@ -204,3 +212,7 @@ Host implementation references:
   CarAppBinder, AppManager, Bundleable, SurfaceContainer, and template/delegate contracts.
 - [Drawing maps and surface bounds](https://developer.android.com/training/cars/apps/library/draw-maps).
 - [Map gestures and pan mode](https://developer.android.com/training/cars/apps/library/interact-map).
+- [Car app lifecycles](https://developer.android.com/training/cars/apps/library/lifecycles).
+- [Media3 browser/controller guide](https://developer.android.com/media/media3/session/connect-to-media-app).
+- [Media3 1.11.1 source artifact](https://dl.google.com/dl/android/maven2/androidx/media3/media3-session/1.11.1/media3-session-1.11.1-sources.jar):
+  SessionToken's legacy-service detection, browser paging/subscriptions, and controller release semantics.

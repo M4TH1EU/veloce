@@ -44,6 +44,8 @@ dependencies {
     implementation(libs.lifecycle.compose)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.coroutines.android)
+    implementation(libs.coroutines.guava)
+    implementation(libs.media3.session)
     debugImplementation(libs.compose.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

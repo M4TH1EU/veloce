@@ -12,12 +12,17 @@ import android.os.Looper
 import android.view.Surface
 import androidx.car.app.*
 import androidx.car.app.model.Action
+import androidx.car.app.model.Alert
+import androidx.car.app.model.CarText
 import androidx.car.app.model.MessageTemplate
 import androidx.car.app.model.TemplateWrapper
 import androidx.car.app.navigation.INavigationManager
+import androidx.car.app.navigation.INavigationHost
 import androidx.car.app.serialization.Bundleable
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
+import ch.broillet.veloce.ui.CarNavigation
+import ch.broillet.veloce.ui.CarWorkspace
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -139,6 +144,72 @@ class CarAppHostTest {
         first!!.onSuccess(null)
         await { second }
         assertNull(host.error)
+    }
+
+    @Test fun homeAndMusicRetainTheSameNavigationSession() {
+        val navigation = CarNavigation()
+        val workspace = CarWorkspace(RuntimeEnvironment.getApplication(), navigation, logs::add)
+        try {
+            workspace.open(host.app)
+            val retained = workspace.host!!
+            await { retained.template != null }
+            INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
+            await { retained.navigating }
+            navigation.home()
+            workspace.updateVisibility()
+            await { "stop" in endpoint.calls }
+            assertTrue(retained.navigating)
+            assertFalse("endNavigation" in endpoint.calls)
+            assertTrue(shadowOf(RuntimeEnvironment.getApplication()).unboundServiceConnections.isEmpty())
+            workspace.open(host.app.copy(component = ComponentName(host.app.component.packageName, "Music"), kind = AppKind.AUDIO))
+            assertSame(retained, workspace.host)
+            workspace.open(host.app)
+            await { endpoint.calls.count { it == "resume" } == 2 }
+            assertEquals(1, endpoint.calls.count { it == "create" })
+        } finally { workspace.close() }
+        await { "endNavigation" in endpoint.calls }
+    }
+
+    @Test fun backgroundAppFinishDoesNotCloseTheForegroundMusicPage() {
+        val navigation = CarNavigation()
+        val workspace = CarWorkspace(RuntimeEnvironment.getApplication(), navigation, logs::add)
+        try {
+            workspace.open(host.app)
+            await { workspace.host?.template != null }
+            val music = host.app.copy(component = ComponentName(host.app.component.packageName, "Music"), kind = AppKind.AUDIO)
+            workspace.open(music)
+            endpoint.carHost.finish()
+            await { workspace.host == null }
+            assertEquals(music, navigation.selected)
+        } finally { workspace.close() }
+    }
+
+    @Test fun stoppingNavigationIsExplicitAndDoesNotDestroyTheSession() {
+        host.connect()
+        await { host.template != null }
+        INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
+        await { host.navigating }
+        host.setVisible(false)
+        await { "stop" in endpoint.calls }
+        host.stopNavigation()
+        await { !host.navigating }
+        assertEquals(1, endpoint.calls.count { it == "endNavigation" })
+        assertTrue(shadowOf(RuntimeEnvironment.getApplication()).unboundServiceConnections.isEmpty())
+    }
+
+    @Test fun callbackFreeBackgroundAlertsCannotTimeOutAndKillNavigation() {
+        host.connect()
+        await { host.template != null }
+        INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
+        await { host.navigating }
+        host.setVisible(false)
+        await { "stop" in endpoint.calls }
+        val alert = Alert.Builder(1, CarText.create("Traffic"), 5000).build()
+        IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE)).showAlert(Bundleable.create(alert))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(9))
+        assertNull(host.error)
+        assertNull(host.alert)
+        assertTrue(host.navigating)
     }
 
     @Test fun surfaceRegisteredBeforeCallbackGetsDimensionsBoundsAndGestures() {

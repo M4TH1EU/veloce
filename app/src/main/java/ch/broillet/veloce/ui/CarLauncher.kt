@@ -1,6 +1,5 @@
 package ch.broillet.veloce.ui
 
-import android.media.session.PlaybackState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,11 +22,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.broillet.veloce.R
+import ch.broillet.veloce.VeloceApplication
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
 import ch.broillet.veloce.hosting.CarAppContent
-import ch.broillet.veloce.media.NowPlaying
+import ch.broillet.veloce.media.ActiveMedia
 import ch.broillet.veloce.projection.ScreenSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -41,15 +42,43 @@ class CarNavigation {
     var appBack: (() -> Unit)? = null
     fun home() { selected = null; player = false }
     fun back(exit: () -> Unit) {
+        if (player) { player = false; return }
         val hostedBack = appBack
-        if (selected != null && hostedBack != null) hostedBack() else if (selected != null || player) home() else exit()
+        if (selected != null && hostedBack != null) hostedBack() else if (selected != null) home() else exit()
     }
 }
 
 @Composable
-fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, track: NowPlaying?, navigation: CarNavigation,
-    control: (Long) -> Boolean, exit: () -> Unit) {
+fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation, media: ActiveMedia, exit: () -> Unit) {
     val context = LocalContext.current
+    val workspace = remember(context, navigation) {
+        CarWorkspace(context, navigation, (context.applicationContext as VeloceApplication).connections::log)
+    }
+    DisposableEffect(workspace) { onDispose { workspace.close() } }
+    val selected = navigation.selected
+    val host = workspace.host
+    val library = workspace.library
+    val active by media.nowPlaying.collectAsStateWithLifecycle()
+    val tracks by media.tracks.collectAsStateWithLifecycle()
+    val currentTrack = active?.takeIf { it.playing } ?: library?.nowPlaying?.takeIf { it.playing } ?: active ?: library?.nowPlaying
+    val playerTrack = if (selected?.kind == AppKind.AUDIO) {
+        library?.nowPlaying?.takeIf { it.title != null }
+            ?: tracks.firstOrNull { it.packageName == selected.component.packageName && it.playing }
+            ?: tracks.firstOrNull { it.packageName == selected.component.packageName }
+            ?: library?.nowPlaying
+    } else currentTrack
+    val libraryPlayer = library?.takeIf { playerTrack != null && playerTrack === it.nowPlaying }
+    val control: (Long) -> Boolean = { action ->
+        libraryPlayer?.control(action) ?: media.control(action, playerTrack?.packageName)
+    }
+    LaunchedEffect(host, selected, navigation.player, navigation.projected) { workspace.updateVisibility() }
+    SideEffect {
+        navigation.appBack = when {
+            selected?.kind == AppKind.AUDIO -> ({ if (library?.back() != true) navigation.home() })
+            selected != null && selected.component == host?.app?.component -> host::back
+            else -> null
+        }
+    }
     val clock by produceState("") {
         val format = android.text.format.DateFormat.getTimeFormat(context)
         while (true) { value = format.format(Date()); delay(10_000) }
@@ -63,18 +92,25 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, track: NowPlaying?, naviga
                     style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(clock, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
             }
-            val selected = navigation.selected
-            when {
-                navigation.player || selected?.kind == AppKind.AUDIO -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Player(if (selected == null || selected.component.packageName == track?.packageName) track else null, control)
+            if (host?.navigating == true && (selected?.component != host.app.component || navigation.player)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { workspace.open(host.app) }, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.resume_navigation, host.app.label), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    TextButton(onClick = host::stopNavigation) { Text(stringResource(R.string.stop_navigation)) }
                 }
-                selected != null -> key(selected.component) { CarAppContent(selected, navigation, Modifier.fillMaxWidth().weight(1f)) }
+            }
+            when {
+                navigation.player -> MediaPlayer(playerTrack, control, Modifier.fillMaxWidth().weight(1f),
+                    if (selected?.kind == AppKind.AUDIO || libraryPlayer != null) library?.playbackError else null)
+                selected?.kind == AppKind.AUDIO && library != null -> MediaLibraryContent(library, { navigation.player = true }, Modifier.fillMaxWidth().weight(1f))
+                selected != null && host != null -> key(host) { CarAppContent(host, navigation::home, Modifier.fillMaxWidth().weight(1f)) }
                 apps.isEmpty() -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_apps)) }
                 else -> LazyVerticalGrid(GridCells.Adaptive(136.dp), Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(apps, key = { it.component.flattenToString() }) { app ->
                         var focused by remember { mutableStateOf(false) }
-                        Card(onClick = { navigation.selected = app }, modifier = Modifier
+                        Card(onClick = { workspace.open(app) }, modifier = Modifier
                             .onFocusChanged { focused = it.hasFocus }
                             .border(2.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))) {
                             Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -92,36 +128,17 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, track: NowPlaying?, naviga
                     if (selected != null || navigation.player) TextButton(onClick = { navigation.back(exit) }, modifier = Modifier.heightIn(min = 56.dp)) {
                         Text(stringResource(R.string.back))
                     }
-                    TextButton(onClick = { navigation.home(); navigation.player = true }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
-                        Text(track?.title ?: stringResource(R.string.now_playing), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton(onClick = {
+                        if (library != null && library.app.component.packageName == currentTrack?.packageName) workspace.open(library.app)
+                        else navigation.home()
+                        navigation.player = true
+                    }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
+                        Text(currentTrack?.title ?: stringResource(R.string.now_playing), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     TextButton(onClick = exit, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.return_to_car)) }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Player(track: NowPlaying?, control: (Long) -> Boolean) {
-    var failed by remember { mutableStateOf(false) }
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(track?.title ?: stringResource(R.string.start_playback), style = MaterialTheme.typography.headlineSmall,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
-        track?.let {
-            Text(it.artist ?: it.packageName, style = MaterialTheme.typography.bodyLarge)
-            val playPause = if (it.playing) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
-            val toggle = if (it.actions and playPause != 0L) playPause else PlaybackState.ACTION_PLAY_PAUSE
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf(R.string.previous to PlaybackState.ACTION_SKIP_TO_PREVIOUS,
-                    (if (it.playing) R.string.pause else R.string.play) to toggle,
-                    R.string.next to PlaybackState.ACTION_SKIP_TO_NEXT).forEach { (label, action) ->
-                    FilledTonalButton(onClick = { failed = !control(action) }, enabled = it.actions and action != 0L,
-                        modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(label)) }
-                }
-            }
-        }
-        if (failed) Text(stringResource(R.string.media_unavailable), color = MaterialTheme.colorScheme.error)
     }
 }
 

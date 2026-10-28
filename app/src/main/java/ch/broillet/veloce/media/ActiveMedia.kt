@@ -29,6 +29,8 @@ class ActiveMedia(context: Context) {
     private val controllers = mutableListOf<MediaController>()
     private val current = MutableStateFlow<NowPlaying?>(null)
     val nowPlaying = current.asStateFlow()
+    private val allTracks = MutableStateFlow<List<NowPlaying>>(emptyList())
+    val tracks = allTracks.asStateFlow()
     private val connected = MutableStateFlow(false)
     val isConnected = connected.asStateFlow()
     private var selected: MediaController? = null
@@ -80,7 +82,7 @@ class ActiveMedia(context: Context) {
             ?: controllers.firstOrNull { it.sessionToken == selected?.sessionToken }
             ?: controllers.firstOrNull()
         selected = active
-        current.value = active?.let {
+        val snapshots = controllers.map {
             val metadata = it.metadata
             NowPlaying(
                 it.packageName,
@@ -91,10 +93,15 @@ class ActiveMedia(context: Context) {
                 it.playbackState?.actions ?: 0,
             )
         }
+        allTracks.value = snapshots
+        current.value = snapshots.getOrNull(controllers.indexOf(active))
     }
 
-    fun control(action: Long): Boolean {
-        val controller = selected ?: return false
+    fun control(action: Long, packageName: String? = null): Boolean {
+        val controller = if (packageName == null) selected else
+            controllers.firstOrNull { it.packageName == packageName && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                ?: controllers.firstOrNull { it.packageName == packageName }
+        controller ?: return false
         if ((controller.playbackState?.actions ?: 0) and action == 0L) return false
         return try {
             when (action) {
