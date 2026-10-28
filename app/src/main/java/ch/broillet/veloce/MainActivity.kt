@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.PendingIntent
 import android.bluetooth.BluetoothManager
+import android.companion.AssociationInfo
+import android.companion.CompanionDeviceManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,6 +15,8 @@ import android.content.pm.PackageManager
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.graphics.Color
+import android.media.projection.MediaProjectionConfig
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -21,14 +25,43 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import ch.broillet.veloce.connection.ConnectionService
+import ch.broillet.veloce.audio.AudioRoutes
 import ch.broillet.veloce.ui.VeloceApp
 import ch.broillet.veloce.ui.VeloceTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val model by viewModels<HomeModel>()
     private val usb get() = getSystemService(UsbManager::class.java)
     private val usbPermissionAction get() = "$packageName.USB_PERMISSION"
+    private var requestedAudio: String? = null
+    private var consentSession: String? = null
+    private var audioRoutes: AudioRoutes? = null
+    private val companionApproval = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == RESULT_OK) result.data?.getParcelableExtra(CompanionDeviceManager.EXTRA_ASSOCIATION, AssociationInfo::class.java)
+            ?.let(model.wirelessAuto::associated)
+    }
+    private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) askAudioConsent() else audioDenied("Allow audio recording permission to capture media playback")
+    }
+    private val audioConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val session = consentSession
+        consentSession = null
+        if (session != null && session == model.connections.state.value.audioRequest) {
+            val data = result.data
+            if (result.resultCode == RESULT_OK && data != null) {
+                startService(Intent(this, ConnectionService::class.java).setAction("audio")
+                    .putExtra("session", session).putExtra("result", result.resultCode).putExtra("consent", data))
+            } else model.connections.audio("Audio sharing declined · tap Enable audio to retry")
+        }
+        requestAudio()
+    }
     private val wirelessPermissions get() = buildList {
         add(Manifest.permission.BLUETOOTH_CONNECT)
         add(Manifest.permission.NEARBY_WIFI_DEVICES)
@@ -52,11 +85,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedAudio = savedInstanceState?.getString("requested_audio")
+        consentSession = savedInstanceState?.getString("consent_session")
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
         registerReceiver(usbEvents, IntentFilter(usbPermissionAction), RECEIVER_NOT_EXPORTED)
         if (savedInstanceState == null) handleAccessory(intent)
         setContent {
-            VeloceTheme { VeloceApp(model, ::connectUsb, ::connectWireless, ::openMediaAccess, ::shareDiagnostics) }
+            VeloceTheme { VeloceApp(model, ::connectUsb, ::connectWireless, ::openMediaAccess, ::shareDiagnostics,
+                { requestAudio(manual = true) }, { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }, {
+                    if (model.wirelessAuto.enabled.value) model.wirelessAuto.disable()
+                    else model.wirelessAuto.enable { companionApproval.launch(IntentSenderRequest.Builder(it).build()) }
+                }) }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                model.connections.state.collect { requestAudio() }
+            }
         }
     }
 
@@ -91,6 +135,41 @@ class MainActivity : ComponentActivity() {
         permissions.launch((wirelessPermissions + Manifest.permission.POST_NOTIFICATIONS).toTypedArray())
     }
 
+    private fun requestAudio(manual: Boolean = false) {
+        val state = model.connections.state.value
+        val session = state.audioRequest ?: return
+        if (!state.active || state.audioCapturing || consentSession != null || (!manual && requestedAudio == session)) return
+        requestedAudio = session
+        consentSession = session
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) askAudioConsent()
+        else audioPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun askAudioConsent() {
+        val session = consentSession ?: return
+        if (session != model.connections.state.value.audioRequest || !model.connections.state.value.active) {
+            consentSession = null
+            requestAudio()
+            return
+        }
+        try {
+            val manager = getSystemService(MediaProjectionManager::class.java)
+            audioConsent.launch(manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()))
+        } catch (error: Exception) { audioDenied("Could not request audio sharing: ${error.message}") }
+    }
+
+    private fun audioDenied(detail: String) {
+        if (consentSession == model.connections.state.value.audioRequest) model.connections.audio(detail)
+        consentSession = null
+        requestAudio()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("requested_audio", requestedAudio)
+        outState.putString("consent_session", consentSession)
+        super.onSaveInstanceState(outState)
+    }
+
     @SuppressLint("MissingPermission")
     private fun chooseCar() {
         val adapter = getSystemService(BluetoothManager::class.java).adapter
@@ -119,6 +198,11 @@ class MainActivity : ComponentActivity() {
             .putExtra(Intent.EXTRA_TEXT, model.connections.diagnostics()), getString(R.string.share_diagnostics)))
     }
 
-    override fun onResume() { super.onResume(); model.refresh() }
+    override fun onResume() {
+        super.onResume()
+        model.refresh()
+        audioRoutes = AudioRoutes(this, model.connections::audioRoute)
+    }
+    override fun onPause() { audioRoutes?.close(); audioRoutes = null; super.onPause() }
     override fun onDestroy() { unregisterReceiver(usbEvents); super.onDestroy() }
 }

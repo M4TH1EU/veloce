@@ -14,7 +14,7 @@ still requires validation against the intended patched navigation apps.
 - Name: Veloce. Application ID: `ch.broillet.veloce`.
 - Minimum Android 14 (API 34); compile/target Android 17 (API 37).
 - Both Bluetooth audio and audio forwarded over the projection link are in scope.
-- Wireless starts manually in the first milestone.
+- Wireless supports manual startup and optional companion-device auto-connect.
 - Reference apps: Spotify, patched Waze, and patched Google Maps.
 - The project owner will choose the license later.
 
@@ -38,14 +38,18 @@ still requires validation against the intended patched navigation apps.
   Home/music/map switching; hidden UI does not stop an active navigation session.
 - Unified Media3/legacy library browsing with bounded pages, folder history,
   child updates, media-ID playback, and package-specific active-session fallback.
+- Negotiated PCM/AAC media audio over either transport, session-owned playback
+  capture, consent/revocation handling, and local mute/notification-setting restoration.
+- Minimal direct-Bluetooth mode and optional companion-device wireless startup.
+- Parked-only app actions are forwarded without sensor gating by owner request.
 
-Twenty-three protocol tests include a simulated head unit completing real JDK TLS,
+Protocol tests include a simulated head unit completing real JDK TLS,
 channel negotiation, fragmented video packet delivery, keepalive, input, and shutdown.
 Two app-module JVM tests cover coordinate scaling and resource ownership. Physical
 Android rendering, encoder behavior, Bluetooth/Wi-Fi setup, and car acceptance have
 had an initial owner test, not exhaustive hardware validation. AndroidX host
-contracts now have Robolectric coverage; actual app hosting and forwarded audio
-still need further work and device validation. See README for the host subset and
+contracts now have Robolectric coverage; the owner reports working Waze rendering,
+while forwarded audio still needs device validation. See README for the host subset and
 its explicit limitations, including fixed night mode and unverified background
 location/guidance behavior in the intended navigation builds.
 

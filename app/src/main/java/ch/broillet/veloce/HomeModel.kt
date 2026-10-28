@@ -24,6 +24,7 @@ class HomeModel(application: Application) : AndroidViewModel(application) {
     val state = catalogState.asStateFlow()
     val media = (application as VeloceApplication).media
     val connections = (application as VeloceApplication).connections
+    val wirelessAuto = (application as VeloceApplication).wirelessAuto
     private var refreshJob: Job? = null
     private var identityJob: Job? = null
 

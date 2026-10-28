@@ -6,19 +6,24 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.hardware.usb.UsbAccessory
+import android.media.AudioManager
 import android.os.IBinder
 import android.os.SystemClock
+import android.view.KeyEvent
 import ch.broillet.veloce.MainActivity
 import ch.broillet.veloce.R
 import ch.broillet.veloce.VeloceApplication
 import ch.broillet.veloce.apps.CarApps
+import ch.broillet.veloce.audio.PlaybackCapture
 import ch.broillet.veloce.projection.ProjectedWindow
 import ch.broillet.veloce.projection.ScreenSpec
 import ch.broillet.veloce.projection.VideoEncoder
 import ch.broillet.veloce.protocol.CarLink
 import ch.broillet.veloce.protocol.CarSession
 import ch.broillet.veloce.protocol.CarSessionEvents
+import ch.broillet.veloce.protocol.AudioSink
 import ch.broillet.veloce.protocol.Proto
 import ch.broillet.veloce.protocol.VideoMode
 import ch.broillet.veloce.ui.CarLauncher
@@ -37,6 +42,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
 
 class ConnectionService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -50,15 +56,24 @@ class ConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            "audio" -> { current?.startAudio(intent) ?: stopSelf(); return START_NOT_STICKY }
+            "audio-stop" -> { current?.stopAudio() ?: stopSelf(); return START_NOT_STICKY }
+        }
         if (intent?.action == "disconnect") {
-            current?.stop()
-            app.connections.update("Disconnected", false)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            val attempt = current
+            scope.launch {
+                attempt?.disconnect()
+                if (current == null || current === attempt) {
+                    app.connections.update("Disconnected", false)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
             return START_NOT_STICKY
         }
         if (current?.finished == false) return START_NOT_STICKY
-        startForeground(1, notification(getString(R.string.connecting)))
+        startForeground(1, notification(getString(R.string.connecting)), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         val usb = intent?.getParcelableExtra("usb", UsbAccessory::class.java)
         val address = intent?.getStringExtra("wireless")
         if (usb == null && address == null) { stopSelf(); return START_NOT_STICKY }
@@ -99,7 +114,7 @@ class ConnectionService : Service() {
         val finished: Boolean get() = closed.get()
         private val failed = AtomicBoolean(false)
         private val usbConnector = usb?.let { UsbConnector(this@ConnectionService, it) }
-        private val wireless = address?.let { WirelessConnector(this@ConnectionService, it, ::status) }
+        private val wireless = address?.let { WirelessConnector(this@ConnectionService, it, ::status, app.connections::log) }
         @Volatile private var link: CarLink? = null
         @Volatile private var session: CarSession? = null
         @Volatile private var encoder: VideoEncoder? = null
@@ -108,6 +123,10 @@ class ConnectionService : Service() {
         private var window: ProjectedWindow? = null
         @Volatile private var renderJob: Job? = null
         private val navigation = CarNavigation()
+        private val id = UUID.randomUUID().toString()
+        private var audioSink: AudioSink? = null
+        private var capture: PlaybackCapture? = null
+        private var audioGeneration = 0
 
         suspend fun execute() {
             status(if (usbConnector != null) "Opening USB projection" else "Starting wireless projection")
@@ -117,8 +136,9 @@ class ConnectionService : Service() {
                     val opened = usbConnector?.open() ?: checkNotNull(wireless).open()
                     link = opened
                     if (closed.get()) { opened.close(); return@withContext }
-                    val active = CarSession(opened, tls, this@Attempt)
+                    val active = CarSession(opened, tls, this@Attempt, app.connections.forwardAudio.value)
                     session = active
+                    app.connections.audio(if (app.connections.forwardAudio.value) "Negotiating car audio" else "Bluetooth audio · select the real car in Android's media output settings", request = null, capturing = false)
                     if (closed.get()) { active.close(); return@withContext }
                     scope.launch {
                         while (isActive && !closed.get() && !startedVideo) {
@@ -147,6 +167,74 @@ class ConnectionService : Service() {
                 app.connections.update(detail, true)
                 getSystemService(NotificationManager::class.java).notify(1, notification(detail))
             }
+        }
+
+        override fun diagnostic(detail: String) = app.connections.log(detail)
+
+        override fun audio(sink: AudioSink) { scope.launch {
+            if (closed.get()) return@launch
+            audioSink = sink
+            app.connections.audio("Allow audio sharing to send media to the car · ${sink.mode.description}", request = id, capturing = false)
+            getSystemService(NotificationManager::class.java).notify(1, notification("Tap to enable car audio"))
+        } }
+
+        override fun audioFocus(state: Int) { scope.launch {
+            if (closed.get() || capture == null) return@launch
+            if (state == 3) {
+                val manager = getSystemService(AudioManager::class.java)
+                manager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+                manager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+            }
+            app.connections.audio(when (state) {
+                1, 2, 6 -> "Forwarding media to the car"
+                3 -> "Car audio interrupted · media paused"
+                5 -> "Car audio temporarily interrupted"
+                else -> "Car media audio ducked"
+            })
+        } }
+
+        override fun audioError(detail: String) { scope.launch {
+            if (closed.get()) return@launch
+            stopAudio()
+            audioSink = null
+            app.connections.audio(detail, request = null, capturing = false)
+        } }
+
+        fun startAudio(intent: Intent) {
+            if (closed.get() || intent.getStringExtra("session") != id || capture != null) return
+            val sink = audioSink ?: return
+            val result = intent.getParcelableExtra("consent", Intent::class.java) ?: return
+            val generation = ++audioGeneration
+            try {
+                startForeground(1, notification("Sharing audio with the car"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                val sharing = PlaybackCapture(this@ConnectionService, sink,
+                    { detail -> scope.launch { if (!closed.get() && audioGeneration == generation && capture != null) app.connections.audio(detail) } },
+                    app.connections::log,
+                    { owner, detail -> scope.launch { if (capture === owner) { stopAudio(); app.connections.audio(detail) } } })
+                capture = sharing
+                app.connections.audio("Starting playback capture", capturing = true)
+                sharing.start(intent.getIntExtra("result", 0), result)
+            } catch (error: Exception) {
+                stopAudio()
+                app.connections.audio("Could not start audio: ${error.message}", capturing = false)
+            }
+        }
+
+        fun stopAudio() {
+            audioGeneration++
+            capture?.close()
+            capture = null
+            if (!closed.get()) {
+                startForeground(1, notification(app.connections.state.value.detail), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                app.connections.audio("Audio sharing stopped", capturing = false)
+            }
+        }
+
+        suspend fun disconnect() {
+            stopAudio()
+            withContext(Dispatchers.IO) { runCatching { session?.disconnect() } }
+            stop()
         }
 
         override fun video(mode: VideoMode) {
@@ -213,6 +301,8 @@ class ConnectionService : Service() {
 
         fun stop() {
             if (!closed.compareAndSet(false, true)) return
+            stopAudio()
+            app.connections.audio("Audio disconnected", request = null, capturing = false)
             renderJob?.cancel()
             session?.close()
             runCatching { link?.close() }

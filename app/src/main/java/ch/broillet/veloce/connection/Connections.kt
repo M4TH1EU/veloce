@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbAccessory
 import android.util.Log
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -16,12 +17,19 @@ data class ConnectionState(
     val identityReady: Boolean = false,
     val preparing: Boolean = false,
     val error: Boolean = false,
+    val audioDetail: String = "Audio through the car connection",
+    val audioRequest: String? = null,
+    val audioCapturing: Boolean = false,
+    val audioRoute: String = "",
 )
 
 class Connections(private val context: Context) {
     val identity = IdentityStore(context)
     private val mutable = MutableStateFlow(ConnectionState(identityReady = identity.exists))
     val state = mutable.asStateFlow()
+    private val preferences = context.getSharedPreferences("connection", Context.MODE_PRIVATE)
+    private val audioMode = MutableStateFlow(preferences.getBoolean("forward_audio", true))
+    val forwardAudio = audioMode.asStateFlow()
     private val lines = ArrayDeque<String>()
 
     fun update(detail: String, active: Boolean, error: Boolean = false) {
@@ -42,8 +50,30 @@ class Connections(private val context: Context) {
     }
 
     fun usb(accessory: UsbAccessory) = start(Intent(context, ConnectionService::class.java).putExtra("usb", accessory))
-    fun wireless(address: String) = start(Intent(context, ConnectionService::class.java).putExtra("wireless", address))
+    val lastWireless: String? get() = preferences.getString("wireless", null)
+    fun wireless(address: String) {
+        preferences.edit { putString("wireless", address) }
+        start(Intent(context, ConnectionService::class.java).putExtra("wireless", address))
+    }
     fun disconnect() { context.startService(Intent(context, ConnectionService::class.java).setAction("disconnect")) }
+    fun stopAudio() { context.startService(Intent(context, ConnectionService::class.java).setAction("audio-stop")) }
+
+    fun setForwardAudio(value: Boolean) {
+        if (state.value.active) return
+        audioMode.value = value
+        preferences.edit { putBoolean("forward_audio", value) }
+    }
+
+    fun audio(detail: String, request: String? = state.value.audioRequest, capturing: Boolean = state.value.audioCapturing) {
+        log(detail)
+        mutable.update { it.copy(audioDetail = detail, audioRequest = request, audioCapturing = capturing) }
+    }
+
+    fun audioRoute(detail: String) {
+        if (state.value.audioRoute == detail) return
+        log(detail)
+        mutable.update { it.copy(audioRoute = detail) }
+    }
 
     private fun start(intent: Intent) {
         if (!identity.exists) { update("Set up the car certificate before connecting", false, true); return }

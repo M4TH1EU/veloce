@@ -8,6 +8,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -22,18 +23,28 @@ interface CarSessionEvents {
     fun focus(projected: Boolean, inputEnabled: Boolean)
     fun input(report: Proto)
     fun failure(error: Exception)
+    fun diagnostic(detail: String) {}
+    fun audio(sink: AudioSink) {}
+    fun audioFocus(state: Int) {}
+    fun audioError(detail: String) {}
 }
 
-class CarSession(private val link: CarLink, private val tls: TlsEngine, private val events: CarSessionEvents) : Closeable {
+class CarSession(private val link: CarLink, private val tls: TlsEngine, private val events: CarSessionEvents,
+    private val forwardAudio: Boolean = true) : Closeable {
     private enum class Stage { VERSION, TLS, AUTH, DISCOVERY, CHANNELS }
     private data class Outgoing(val channel: Int, val id: Int, val body: ByteArray, val encrypted: Boolean,
-        val control: Boolean, val sent: CountDownLatch? = null, val videoEpoch: Int? = null)
+        val control: Boolean, val sent: CountDownLatch? = null, val videoEpoch: Int? = null, val audioEpoch: Int? = null)
     private val stopped = AtomicBoolean(false)
     private val writes = ArrayBlockingQueue<Outgoing>(24)
+    private val videoWrites = ArrayBlockingQueue<Outgoing>(8)
+    private val pendingWrites = Semaphore(0)
     private val assembler = MessageAssembler()
     private val window = AckWindow()
-    private var stage = Stage.VERSION
+    @Volatile private var stage = Stage.VERSION
+    private val goodbye = CountDownLatch(1)
     private var offer: VideoOffer? = null
+    private var audioChannel: Int? = null
+    @Volatile private var audio: AudioSink? = null
     private var mode: VideoMode? = null
     private var videoStarted = false
     private var inputEnabled = false
@@ -47,7 +58,8 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
         val writer = thread(name = "veloce-car-writer") {
             try {
                 while (!stopped.get()) {
-                    val outgoing = writes.take()
+                    pendingWrites.acquire()
+                    val outgoing = writes.poll() ?: videoWrites.poll() ?: continue
                     write(outgoing)
                     outgoing.sent?.countDown()
                 }
@@ -85,6 +97,8 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                     receive(frame.channel, id, message.copyOfRange(2, message.size), frame.encrypted)
                 }
             }
+        } catch (error: IOException) {
+            if (!stopped.get()) throw error
         } finally {
             close()
             writer.interrupt()
@@ -116,12 +130,34 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                 }
                 6 -> {
                     if (stage != Stage.DISCOVERY) throw IOException("Unexpected service discovery")
-                    val discovery = VideoOffer(Proto(body))
+                    val services = Proto(body)
+                    val discovery = VideoOffer(services)
                     offer = discovery
                     stage = Stage.CHANNELS
                     events.status("Opening video and input channels")
                     open(discovery.channel)
                     discovery.inputChannel?.let(::open)
+                    services.messages(1).forEach { service ->
+                        service.bytes(3)?.let { bytes ->
+                            val sink = Proto(bytes)
+                            if (sink.messages(3).isNotEmpty()) events.diagnostic("Audio offer: channel=${service.number(1)}, type=${sink.number(2)}, codec=${sink.number(1, 1)}, configs=" +
+                                sink.messages(3).joinToString { "${it.number(1)}Hz/${it.number(2)}bit/${it.number(3)}ch" })
+                        }
+                        service.bytes(6)?.let { events.diagnostic("Car Bluetooth address: ${Proto(it).text(1)}") }
+                    }
+                    if (forwardAudio) {
+                        val media = AudioOffer.find(services)
+                        if (media == null) events.audioError("The car offered no supported media audio sink")
+                        else if (media.channel == discovery.channel || media.channel == discovery.inputChannel) {
+                            events.audioError("The car advertised conflicting audio channel IDs")
+                        } else {
+                            audioChannel = media.channel
+                            audio = AudioSink(media,
+                                { id, payload, epoch -> send(media.channel, id, payload, audioEpoch = epoch) },
+                                { id, payload -> send(0, id, payload) }, events)
+                            open(media.channel)
+                        }
+                    }
                 }
                 11 -> {
                     val ping = Proto(body)
@@ -139,7 +175,8 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                     if (reason in listOf(1, 2, 7, 8)) close()
                     else throw IOException("The car ended projection (reason $reason)")
                 }
-                18 -> send(0, 19, Proto.build { number(1, 3) })
+                16 -> close()
+                19 -> audio?.focus(Proto(body).number(1).toInt())
                 255, 65535 -> throw IOException("The car reported protocol error $id")
             }
             return
@@ -147,8 +184,9 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
         val discovery = offer ?: throw IOException("Channel message before service discovery")
         when {
             id == 7 -> send(channel, 8, Proto.build {
-                number(1, if (channel == discovery.channel || channel == discovery.inputChannel) 0 else -1)
+                number(1, if (channel == discovery.channel || channel == discovery.inputChannel || channel == audioChannel) 0 else -1)
             }, control = true)
+            channel == audioChannel -> audio?.receive(id, body)
             channel == discovery.channel -> when (id) {
                 8 -> {
                     requireSuccess(body, "video channel")
@@ -238,6 +276,16 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
         offer?.let { send(it.channel, 0x8007, Proto.build { number(2, 2); number(3, 2) }) }
     }
 
+    fun disconnect() {
+        try {
+            if (stage == Stage.CHANNELS && !stopped.get()) {
+                val sent = CountDownLatch(1)
+                send(0, 15, Proto.build { number(1, 1) }, sent = sent)
+                if (sent.await(250, TimeUnit.MILLISECONDS)) goodbye.await(250, TimeUnit.MILLISECONDS)
+            }
+        } finally { close() }
+    }
+
     private fun open(channel: Int) = send(channel, 7, Proto.build { number(1, 0); number(2, channel.toLong()) }, control = true)
 
     private fun requireSuccess(body: ByteArray, operation: String) {
@@ -245,13 +293,16 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
     }
 
     private fun send(channel: Int, id: Int, body: ByteArray, encrypted: Boolean = true, control: Boolean = false,
-        sent: CountDownLatch? = null, videoEpoch: Int? = null) {
+        sent: CountDownLatch? = null, videoEpoch: Int? = null, audioEpoch: Int? = null) {
         if (stopped.get()) return
-        if (!writes.offer(Outgoing(channel, id, body, encrypted, control, sent, videoEpoch))) throw IOException("Car write queue stalled")
+        val queue = if (videoEpoch == null) writes else videoWrites
+        if (!queue.offer(Outgoing(channel, id, body, encrypted, control, sent, videoEpoch, audioEpoch))) throw IOException("Car write queue stalled")
+        pendingWrites.release()
     }
 
     private fun write(message: Outgoing) {
         if (message.videoEpoch != null && (message.videoEpoch != videoEpoch || !projected)) return
+        if (message.audioEpoch != null && audio?.accepts(message.audioEpoch) != true) return
         val plain = byteArrayOf((message.id ushr 8).toByte(), message.id.toByte()) + message.body
         var offset = 0
         while (offset < plain.size) {
@@ -271,12 +322,15 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
 
     override fun close() {
         if (!stopped.compareAndSet(false, true)) return
+        goodbye.countDown()
         window.close()
+        runCatching { audio?.close() }
+        pendingWrites.release()
         runCatching { link.close() }
     }
 }
 
-internal class AckWindow : Closeable {
+internal class AckWindow(private val timeoutMs: Long = 8_000, private val stream: String = "video") : Closeable {
     @Volatile var limit = 1
     private var inFlight = 0
     private var closed = false
@@ -284,10 +338,10 @@ internal class AckWindow : Closeable {
     private val lock = Object()
 
     fun acquire(expectedEpoch: Int): Boolean = synchronized(lock) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8)
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
         while (inFlight >= limit && !closed && epoch == expectedEpoch) {
             val remaining = deadline - System.nanoTime()
-            if (remaining <= 0) throw IOException("The car stopped acknowledging video")
+            if (remaining <= 0) throw IOException("The car stopped acknowledging $stream")
             TimeUnit.NANOSECONDS.timedWait(lock, remaining)
         }
         if (closed || epoch != expectedEpoch) return false

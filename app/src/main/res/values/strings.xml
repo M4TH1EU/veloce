@@ -46,4 +46,15 @@
     <string name="media_page">Page %1$d</string>
     <string name="retry">Retry</string>
     <string name="refresh">Refresh</string>
+    <string name="car_audio">Car audio</string>
+    <string name="forward_audio">Audio through Veloce</string>
+    <string name="forward_audio_description">Send eligible media playback over USB or Wi-Fi, including wireless adapters. Android asks for audio recording and screen-sharing access. Navigation speech and calls are separate.</string>
+    <string name="bluetooth_audio_description">Use Android’s normal audio output. Select your car for media audio in Bluetooth settings; the wireless adapter can be a different device.</string>
+    <string name="enable_audio">Enable audio</string>
+    <string name="stop_audio">Stop audio</string>
+    <string name="bluetooth_settings">Bluetooth settings</string>
+    <string name="audio_adb_setup">Optional adb setup</string>
+    <string name="audio_adb_commands">Skip the sharing prompt:\nadb shell appops set ch.broillet.veloce PROJECT_MEDIA allow\n\nKeep notification contents visible during audio sharing:\nadb shell pm grant ch.broillet.veloce android.permission.WRITE_SECURE_SETTINGS\n\nVeloce restores the notification setting and its media mute when sharing ends.</string>
+    <string name="enable_auto_connect">Enable wireless auto-connect</string>
+    <string name="disable_auto_connect">Disable wireless auto-connect</string>
 </resources>

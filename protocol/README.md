@@ -33,9 +33,10 @@ encrypted application records, and renegotiation are rejected. Tests exercise th
 JDK provider, not Android's TLS provider or the downloaded production identity.
 
 `CarSession` handles version/authentication, service discovery, dynamically assigned
-channel IDs, H.264 configuration/focus, input binding, keepalive, and shutdown. A
-bounded writer runs separately from the reader so video writes cannot block receipt
-of acknowledgements. An acknowledgement window bounds in-flight video and releases
+channel IDs, H.264 configuration/focus, media audio, input binding, keepalive, and
+shutdown. A bounded writer runs separately from the reader so writes cannot block
+receipt of acknowledgements. Control/audio traffic takes priority over the bounded
+video queue. An acknowledgement window bounds in-flight video and releases
 blocked producers when focus is lost or the session closes. Codec configuration
 also consumes credit. Each focus restart sends Stop/Start with a new media session
 ID, rejects old-session acknowledgements, and sends configuration before a keyframe.
@@ -45,7 +46,15 @@ are limited to 12 KiB before TLS wrapping, below a 16 KiB USB accessory transfer
 Control-channel PingRequest/PingResponse may be plaintext even after authentication
 (the public aasdk control implementation uses this). Replies match the request's
 encryption. Other post-authentication messages must be encrypted. Phone-side forced
-close releases the transport; only car-initiated goodbye is currently acknowledged.
+close releases the transport; phone-initiated disconnect attempts goodbye with a
+bounded wait, and car-initiated goodbye is acknowledged.
+
+`AudioOffer` selects a supported MEDIA sink, preferring PCM to AAC-LC/ADTS, with
+16-bit mono/stereo input and a supported sample rate. `AudioSink` negotiates codec
+and configuration, requests media focus, and sends timestamped data with per-stream
+acknowledgement credit. Stop/restart invalidates old packets and acknowledgements.
+Audio failure is reported independently of video. Bluetooth mode leaves the media
+channel unopened. Android capture and AAC encoding belong to the app module.
 
 `Proto` uses the maintained protobuf-javalite coded streams to read/write the small
 set of supported fields. Unknown fixed-width fields are skipped; packed and unpacked
@@ -65,6 +74,8 @@ Public wire-layout references consulted:
 - [Length fields](https://github.com/opencardev/aasdk/blob/newdev/src/Messenger/FrameSize.cpp)
 - [Encryption bit](https://github.com/opencardev/aasdk/blob/newdev/include/aasdk/Messenger/EncryptionType.hpp)
 - [Control bit](https://github.com/opencardev/aasdk/blob/newdev/include/aasdk/Messenger/MessageType.hpp)
+- [Media contracts](https://github.com/opencardev/aasdk/tree/9bf6adf933665dee26532201719fac14a047ccf1/protobuf/aap_protobuf/service/media)
+- [Audio focus and goodbye](https://github.com/opencardev/aasdk/tree/9bf6adf933665dee26532201719fac14a047ccf1/protobuf/aap_protobuf/service/control/message)
 
 The Kotlin implementation and tests are independently written. These references
 establish the wire format; they are not dependencies of this module.

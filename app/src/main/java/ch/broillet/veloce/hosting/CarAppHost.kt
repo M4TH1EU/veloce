@@ -244,7 +244,6 @@ class CarAppHost(
 
     fun click(delegate: OnClickDelegate?) {
         if (delegate == null) return
-        if (delegate.isParkedOnly) { notice = "This action requires verified parked status, which Veloce does not yet support"; return }
         event { delegate.sendClick(it) }
     }
 

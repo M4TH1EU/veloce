@@ -3,6 +3,7 @@ package ch.broillet.veloce.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,8 +19,11 @@ import ch.broillet.veloce.R
 
 @Composable
 fun VeloceApp(model: HomeModel, connectUsb: () -> Unit, connectWireless: () -> Unit,
-    openMediaAccess: () -> Unit, shareDiagnostics: () -> Unit) {
+    openMediaAccess: () -> Unit, shareDiagnostics: () -> Unit, enableAudio: () -> Unit, openBluetooth: () -> Unit,
+    configureAutoConnect: () -> Unit) {
     val connection by model.connections.state.collectAsStateWithLifecycle()
+    val forwardAudio by model.connections.forwardAudio.collectAsStateWithLifecycle()
+    val autoConnect by model.wirelessAuto.enabled.collectAsStateWithLifecycle()
     var mediaAccess by remember { mutableStateOf(model.media.hasAccess()) }
     var preview by rememberSaveable { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { mediaAccess = model.media.hasAccess() }
@@ -53,6 +57,33 @@ fun VeloceApp(model: HomeModel, connectUsb: () -> Unit, connectWireless: () -> U
                                     Button(onClick = connectUsb) { Text(stringResource(R.string.connect_usb)) }
                                     FilledTonalButton(onClick = connectWireless) { Text(stringResource(R.string.connect_wireless)) }
                                 }
+                            }
+                            if (model.connections.lastWireless != null) TextButton(onClick = configureAutoConnect) {
+                                Text(stringResource(if (autoConnect) R.string.disable_auto_connect else R.string.enable_auto_connect))
+                            }
+                        }
+                    }
+                }
+                item {
+                    Card {
+                        Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(stringResource(R.string.car_audio), style = MaterialTheme.typography.titleLarge)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Switch(checked = forwardAudio, onCheckedChange = model.connections::setForwardAudio, enabled = !connection.active)
+                                Text(stringResource(R.string.forward_audio), Modifier.padding(start = 12.dp))
+                            }
+                            Text(stringResource(if (forwardAudio) R.string.forward_audio_description else R.string.bluetooth_audio_description))
+                            if (connection.active) {
+                                Text(connection.audioDetail)
+                                if (connection.audioCapturing) TextButton(onClick = model.connections::stopAudio) { Text(stringResource(R.string.stop_audio)) }
+                                else if (connection.audioRequest != null) FilledTonalButton(onClick = enableAudio) { Text(stringResource(R.string.enable_audio)) }
+                            }
+                            TextButton(onClick = openBluetooth) { Text(stringResource(R.string.bluetooth_settings)) }
+                            if (!forwardAudio && connection.audioRoute.isNotBlank()) Text(connection.audioRoute)
+                            if (forwardAudio) {
+                                var setup by rememberSaveable { mutableStateOf(false) }
+                                TextButton(onClick = { setup = !setup }) { Text(stringResource(R.string.audio_adb_setup)) }
+                                if (setup) SelectionContainer { Text(stringResource(R.string.audio_adb_commands)) }
                             }
                         }
                     }

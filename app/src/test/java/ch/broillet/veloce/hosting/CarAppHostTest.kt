@@ -19,6 +19,7 @@ import androidx.car.app.model.Action
 import androidx.car.app.model.Alert
 import androidx.car.app.model.CarText
 import androidx.car.app.model.MessageTemplate
+import androidx.car.app.model.ParkedOnlyOnClickListener
 import androidx.car.app.model.TemplateWrapper
 import androidx.car.app.navigation.INavigationManager
 import androidx.car.app.navigation.INavigationHost
@@ -132,7 +133,7 @@ class CarAppHostTest {
         host.connect()
         await { host.template != null }
         var clicked = false
-        val action = Action.Builder().setTitle("Go").setOnClickListener { clicked = true }.build()
+        val action = Action.Builder().setTitle("Go").setOnClickListener(ParkedOnlyOnClickListener.create { clicked = true }).build()
         host.click(action)
         await { clicked }
         assertNull(host.error)

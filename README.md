@@ -5,7 +5,7 @@ Android 14+, with no Google Play services or root dependency.
 
 ## Current development build
 
-- USB accessory and manually initiated wireless projection transports.
+- USB accessory and wireless projection, including opt-in companion-device auto-connect.
 - TLS authentication using a one-time download of the public aasdk identity.
 - Display discovery, H.264 video projection, touch, and directional input.
 - Car-screen launcher with discovered app tiles and active media controls.
@@ -13,16 +13,62 @@ Android 14+, with no Google Play services or root dependency.
 - Retained navigation sessions and paged media-library browsing with playback controls.
 - The same car UI in a real virtual-display preview with preset/custom resolution and DPI.
 - Phone-side setup, connection status, disconnect action, and shareable local diagnostics.
+- Media playback capture forwarded through negotiated PCM/AAC audio sinks over USB or Wi-Fi.
+- A basic direct-Bluetooth audio mode using Android's normal output routing.
 
-The owner has tested basic launcher projection over USB and previously over wireless.
-A wired-to-wireless adapter reporting Wi-Fi mode 8 failed before the network request;
-the compatibility handling for that adapter still needs a device retest.
-App hosting and the remaining hardware workflows still need device validation.
+The owner has tested wired and wireless projection and patched Waze rendering.
+The new audio forwarding, automatic wireless startup, and remaining hardware
+workflows still need device validation.
 Desktop tests do not establish compatibility with a particular head unit or app build.
 
 Templated app tiles open their AndroidX car interface in Veloce. Audio tiles
 connect to the app's media library when permitted, with active-session controls
-as a fallback. Audio forwarding is not implemented.
+as a fallback. Media audio uses Android playback capture when the playing app permits it.
+
+## Audio
+
+**Audio through Veloce** is enabled by default. It uses the same media-audio path
+over USB, native wireless, and wireless-to-USB adapters. With an adapter, choose
+the adapter for wireless startup; the car's separate Bluetooth pairing can remain
+in place for calls. Veloce does not assume the startup device is a Bluetooth speaker.
+
+When the car offers a supported media sink, Veloce requests audio recording and
+Android's screen-sharing authorization. The authorization is used for playback
+audio only; no phone-screen capture display is created. A connected session keeps
+capture through app changes. If the app was in the background during startup, open
+its connection notification to enable audio. **Stop audio** releases capture;
+**Enable audio** requests fresh authorization to start it again.
+
+Veloce prefers 16-bit PCM and supports AAC-LC/ADTS sinks when required. It negotiates
+the sample rate and channels, uses bounded acknowledgement windows, and requests
+car media focus when captured sound begins. Permanent car focus loss pauses phone
+media; transient interruption leaves Android's own playback-resume behavior intact.
+Local media is muted during capture and restored at shutdown, including recovery
+after a process restart. The exported log includes sink negotiation, focus, capture
+silence, and car-reported underflows.
+
+Playback capture is limited to eligible MEDIA/GAME/UNKNOWN audio in the same user
+profile. Apps can prohibit it, in which case capture may contain silence. Navigation
+speech, including Waze's native guidance, is deferred; no replacement directions
+are generated. Cellular calls continue through the normal Bluetooth hands-free
+connection, whose behavior with the specific adapter still needs testing.
+
+To use direct Bluetooth media instead, disconnect and turn **Audio through Veloce**
+off, then choose the real car in Android's output/Bluetooth settings. The projection
+MEDIA sink stays closed. Veloce shows Android's anticipated media route; it cannot
+force another app's player onto a particular Bluetooth device.
+
+Optional setup commands, also shown in the audio section:
+
+```sh
+adb shell appops set ch.broillet.veloce PROJECT_MEDIA allow
+adb shell pm grant ch.broillet.veloce android.permission.WRITE_SECURE_SETTINGS
+```
+
+The first preauthorizes sharing on supported Android builds. The second lets Veloce
+temporarily lift Android's global screen-share notification protection during
+audio capture and restore the previous setting afterward. Neither bypasses a media
+app's capture policy. Normal consent works without these optional grants.
 
 ## Car app hosting (experimental)
 
@@ -44,7 +90,7 @@ This is a template subset, not full Car App API conformance. Sign-in is directed
 to the phone; host-drawn POI maps, hardware APIs, microphone/voice input, cluster
 forwarding, cross-app launches, and the global CarConnection provider are absent.
 The host uses the same fixed night configuration as Veloce's UI. Parked-only
-actions are blocked because vehicle parked status is not available. Search uses
+actions are forwarded without a vehicle-status check, as requested for this host. Search uses
 Android's text input; a car-specific keyboard is not implemented.
 Home and music pages keep the current templated app bound, pausing its UI and
 releasing its map surface while hidden. An active route offers **Return to…**
@@ -56,7 +102,7 @@ app's own implementation and permissions; locked-phone behavior is unverified.
 Patched Waze/Google Maps builds must expose an exported AndroidX `CarAppService`
 and accept Veloce's host identity. A Morphe host-validation patch alone does not
 prove this; legacy/proprietary car interfaces are not supported by this host.
-Exact patched-build compatibility has not yet been tested.
+The owner has confirmed Waze rendering with the Morphe patch; other builds remain unverified.
 
 [Veloce Patches](veloce-patches/README.md) is the standalone Morphe bundle project,
 initially containing a Waze custom-host patch. The reported Waze manager-proxy
@@ -83,7 +129,7 @@ commands. In that case, **Now playing** uses an existing session from the same
 package if notification access was granted. Start playback on the phone if no
 session is available. The reported Spotify build rejected the browser connection;
 neither browsing nor playback-capture access is guaranteed. Media search, artwork,
-queue editing, custom actions, shuffle/repeat, and projection audio are not yet implemented.
+queue editing, custom actions, and shuffle/repeat are not yet implemented.
 
 See [app compatibility findings](docs/APP_COMPATIBILITY.md) for the reported
 Audiobookshelf, Fork Client, Spotify, Home Assistant and Bluetooth-service errors
@@ -120,7 +166,11 @@ Release builds are unsigned until the project's signing setup is chosen.
    Bluetooth/Wi-Fi, tap **Wireless**, grant nearby/local-network access, and choose
    the car. Accept Android's Wi-Fi connection prompt. Some head units initiate the
    Bluetooth bootstrap themselves: reconnect the phone from the car's Bluetooth
-   menu if Veloce displays a waiting message.
+    menu if Veloce displays a waiting message.
+    For a wireless adapter, select the adapter here. After choosing a device,
+    **Enable wireless auto-connect** associates that device using Android's
+    companion-device setup. Future Bluetooth connection events start projection;
+    audio authorization may still require opening Veloce's notification.
 6. The launcher should appear once the car grants display focus. Try scrolling the
    app grid, Home, directional controls, and **Car** to return to the native screen.
 7. If setup fails, use **Share connection log** and include the phone/OS and head unit.
@@ -132,20 +182,23 @@ unverified. Start the first projection test with the phone unlocked.
 
 Active-session fallback controls require notification access; a successfully
 connected media library supplies its own controller without that permission.
-Audio forwarding over the projection link is not enabled in this build.
+Playback-capture authorization is separate from media-control access.
 
 Notification contents are not read by Veloce. The listener is used to obtain active
 media sessions. It does not bypass an app's library-access or playback-capture policy.
 
 ## Verified scope and limitations
 
-- 23 protocol tests cover framing, real JDK TLS, channel negotiation, fragmented
+- Protocol tests cover framing, real JDK TLS, channel negotiation, fragmented
   video payloads, plaintext/encrypted keepalive, acknowledgement backpressure,
-  focus restart, rejected input binding, and car-initiated shutdown.
+  focus restart, rejected input binding, media audio alongside video, audio codec
+  selection/credits/focus, Bluetooth mode, and car/phone-initiated shutdown.
 - Android-module tests cover touch-coordinate scaling, resource cleanup, API negotiation,
   AndroidX host binding/lifecycle/callbacks/errors/surfaces, retained navigation,
   and Media3/legacy browsing and cancellation under Robolectric.
-  They do not validate actual third-party map drawing or car-screen rendering.
+  Audio tests also cover mute/notification-setting restoration and adapter Bluetooth
+  handoff. They do not validate actual playback capture, AAC encoding, third-party
+  map drawing, companion-device presence delivery, or audible car output.
 - Projection uses the main H.264 display, supported standard resolutions up to
   1920 × 1080 (or 1080 × 1920), and the offered 30/60 fps configuration. Encoder
   support is device-dependent; automatic renegotiation after codec failure is absent.
@@ -157,8 +210,8 @@ media sessions. It does not bypass an app's library-access or playback-capture p
   the public schema labels 8 as WPA2-Enterprise, whose EAP setup is not implemented.
   Bluetooth bootstrap version fields are only partially described publicly;
   broader head-unit interoperability still needs testing.
-- **Disconnect** closes the transport promptly. Car-initiated shutdown is acknowledged;
-  phone-initiated protocol goodbye negotiation is not implemented.
+- **Disconnect** gives protocol goodbye a bounded opportunity to complete, then
+  closes the transport. Unexpected link loss also releases capture and local mute.
 
 ## Structure
 
@@ -169,6 +222,7 @@ media sessions. It does not bypass an app's library-access or playback-capture p
   bounded video flow control, and protocol tests without Android dependencies.
 - `veloce-patches`: independent Morphe patch-bundle build and Waze compatibility patch.
 - [Foundation brief](FOUNDATION.md): agreed scope, constraints, and primary references.
+- [Connection/audio study](docs/CONNECTION_AUDIO_STUDY.md): reference-project findings and platform constraints.
 
 ## License
 

@@ -28,7 +28,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 @SuppressLint("MissingPermission")
-internal class WirelessConnector(context: Context, private val address: String, private val status: (String) -> Unit) : Closeable {
+internal class WirelessConnector(context: Context, private val address: String, private val status: (String) -> Unit,
+    private val log: (String) -> Unit = {}) : Closeable {
     private val bluetooth = context.getSystemService(BluetoothManager::class.java)
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val resources = LinkResources()
@@ -118,8 +119,7 @@ internal class WirelessConnector(context: Context, private val address: String, 
                 thread(name = "veloce-wireless-network") {
                     try {
                         val (network, phoneIp) = join(wifi)
-                        send(7, Proto.build { text(1, phoneIp); number(3, 0) })
-                        send(6, Proto.build { number(1, 0) })
+                        reportWifiReady({ id, payload -> send(id, payload) }, phoneIp, log)
                         val link = tcp(network, endpoint)
                         if (!ready.complete(link)) link.close()
                     } catch (error: Exception) {
@@ -185,4 +185,13 @@ internal class WirelessConnector(context: Context, private val address: String, 
     }
 
     override fun close() = resources.close()
+}
+
+internal fun reportWifiReady(send: (Int, ByteArray) -> Unit, phoneIp: String, log: (String) -> Unit) {
+    try {
+        send(7, Proto.build { text(1, phoneIp); number(3, 0) })
+        send(6, Proto.build { number(1, 0) })
+    } catch (_: IOException) {
+        log("Bluetooth bootstrap ended after Wi-Fi setup; continuing over TCP")
+    }
 }

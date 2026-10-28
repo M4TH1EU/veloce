@@ -78,9 +78,10 @@ audio. A Waze host patch cannot change its behavior.
 
 Grant Veloce notification access, start playback in the chosen audio app on the
 phone, then use **Now playing**. Controls depend on the app publishing an active
-session and the actions it exposes. This is separate from browsing. Projection
-audio forwarding remains unimplemented; sound routing is through the phone's
-available outputs, including ordinary Bluetooth audio when connected.
+session and the actions it exposes. This is separate from browsing. **Audio through
+Veloce** forwards eligible playback over the car connection after authorization;
+apps can prohibit capture. With it disabled, playback uses Android's normal outputs,
+including direct car Bluetooth. See the main README for setup and limitations.
 
 ## References
 
