@@ -137,8 +137,8 @@ internal class WirelessConnector(context: Context, private val address: String, 
         status("Joining the car's Wi-Fi · accept Android's connection prompt")
         val password = wifi.text(2)
         val security = wifi.number(4)
-        if (!(security == 1L && password.isEmpty() || security in listOf(5L, 6L) && password.isNotEmpty())) {
-            throw IOException("The car uses an unsupported Wi-Fi security mode")
+        if (!(security == 1L && password.isEmpty() || security in 4L..6L && password.isNotEmpty())) {
+            throw IOException("The car uses an unsupported Wi-Fi security mode or invalid credentials (mode $security)")
         }
         val specifier = WifiNetworkSpecifier.Builder().setSsid(wifi.text(1)).apply {
             runCatching { MacAddress.fromString(wifi.text(3)) }.getOrNull()

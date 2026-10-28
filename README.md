@@ -78,7 +78,7 @@ media sessions. It does not bypass an app's library-access or playback-capture p
   support is device-dependent; automatic renegotiation after codec failure is absent.
 - Touch is scaled from the advertised main touchscreen to the visible video area.
   Head-unit margin conventions, D-pad focus, and rotary traversal need car testing.
-- Wireless supports an IPv4 car endpoint and open/WPA2-compatible personal Wi-Fi.
+- Wireless supports an IPv4 car endpoint and open/WPA/WPA2 personal Wi-Fi.
   Bluetooth bootstrap version fields are only partially described publicly;
   real head-unit interoperability is unverified.
 - **Disconnect** closes the transport promptly. Car-initiated shutdown is acknowledged;
