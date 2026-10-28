@@ -74,7 +74,13 @@ location/guidance behavior in the intended navigation builds.
   traversal. Input is suppressed for projected-without-input focus.
 - Wireless waits for IPv4 link properties, keeps Wi-Fi/TCP ownership independent of
   bootstrap read EOF once network setup has begun, and stops retrying after cancellation.
-  Unsupported Wi-Fi security modes fail explicitly rather than being treated as WPA2.
+  The reported adapter's mode 8 is attempted as WPA2-Personal with its supplied
+  passphrase and an explicit diagnostic. Other unsupported modes fail explicitly.
+  This exception is an adapter workaround, not a redefinition of the public enum
+  (which labels 8 as WPA2-Enterprise) or implementation of enterprise authentication.
+- Car-app managers are consumed as AndroidX IInterface types after Bundleable
+  deserialization. Regression tests force remote AIDL proxies; local Binder stubs
+  alone concealed the invalid IBinder cast found in the Waze device test.
 
 These are source-contract checks and desktop regressions, not device observations.
 The simulator uses this project's framing/TLS helpers and synthetic H.264 bytes;
@@ -205,6 +211,11 @@ retention and media-browser work used official lifecycle documentation and Media
 for comparison; no implementation was imported. Unit-test Binder endpoints and
 media-service fixtures live only in the app's test source set; no separate test
 application is built or required.
+
+The device-error follow-up adds an independent `morphe-patches` build, initially
+for Waze. The supplied Forsigh snapshot contains no Gearslip host-validation patch;
+the new patch uses the documented Morphe APIs and AndroidX HostValidator contract.
+App-specific findings and upstream references are in [app compatibility](docs/APP_COMPATIBILITY.md).
 
 Host implementation references:
 

@@ -86,9 +86,10 @@ class CarAppHost(
                         request { endpoint.onHandshakeCompleted(Bundleable.create(HandshakeInfo(context.packageName, api)), it) }
                         request { endpoint.onAppCreate(carHost, Intent(Intent.ACTION_MAIN).setComponent(app.component), configuration, it) }
                         created = true
-                        manager = IAppManager.Stub.asInterface((request { endpoint.getManager(CarContext.APP_SERVICE, it) } as IBinder))
-                        navigation = INavigationManager.Stub.asInterface(
-                            request { endpoint.getManager(CarContext.NAVIGATION_SERVICE, it) } as IBinder)
+                        manager = request { endpoint.getManager(CarContext.APP_SERVICE, it) } as? IAppManager
+                            ?: error("App did not return an AndroidX IAppManager")
+                        navigation = request { endpoint.getManager(CarContext.NAVIGATION_SERVICE, it) } as? INavigationManager
+                            ?: error("App did not return an AndroidX INavigationManager")
                         updateLifecycle()
                     }
                     for (ignored in invalidations) {

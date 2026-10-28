@@ -14,7 +14,9 @@ Android 14+, with no Google Play services or root dependency.
 - The same car UI in a real virtual-display preview with preset/custom resolution and DPI.
 - Phone-side setup, connection status, disconnect action, and shareable local diagnostics.
 
-The owner has tested basic launcher projection over both USB and wireless.
+The owner has tested basic launcher projection over USB and previously over wireless.
+A wired-to-wireless adapter reporting Wi-Fi mode 8 failed before the network request;
+the compatibility handling for that adapter still needs a device retest.
 App hosting and the remaining hardware workflows still need device validation.
 Desktop tests do not establish compatibility with a particular head unit or app build.
 
@@ -56,6 +58,11 @@ and accept Veloce's host identity. A Morphe host-validation patch alone does not
 prove this; legacy/proprietary car interfaces are not supported by this host.
 Exact patched-build compatibility has not yet been tested.
 
+[Veloce Patches](veloce-patches/README.md) is the standalone Morphe bundle project,
+initially containing a Waze custom-host patch. The reported Waze manager-proxy
+crash was a Veloce cast error, now fixed; the installed Waze build already passed
+host validation, so update Veloce and test it before repatching Waze.
+
 To test, open a patched map app in **Car preview**, then on the head unit. Check
 map rendering, actions, route selection, gestures, Back, native-screen return and
 re-entry, and disconnect/reconnect. Complete sign-in and location permissions on
@@ -74,9 +81,13 @@ not pause the media app's playback.
 No Google host identity is spoofed. An app can reject browsing or individual
 commands. In that case, **Now playing** uses an existing session from the same
 package if notification access was granted. Start playback on the phone if no
-session is available. Spotify's actual browsing/access policy remains to be tested;
+session is available. The reported Spotify build rejected the browser connection;
 neither browsing nor playback-capture access is guaranteed. Media search, artwork,
 queue editing, custom actions, shuffle/repeat, and projection audio are not yet implemented.
+
+See [app compatibility findings](docs/APP_COMPATIBILITY.md) for the reported
+Audiobookshelf, Fork Client, Spotify, Home Assistant and Bluetooth-service errors
+and what each integration needs.
 
 Test a route → Home → music folders → play → return-to-map workflow, folder/page
 Back navigation, denied library access, and disconnects during library loading.
@@ -141,6 +152,9 @@ media sessions. It does not bypass an app's library-access or playback-capture p
 - Touch is scaled from the advertised main touchscreen to the visible video area.
   Head-unit margin conventions, D-pad focus, and rotary traversal need car testing.
 - Wireless supports an IPv4 car endpoint and open/WPA/WPA2 personal Wi-Fi.
+  Mode 8 with a valid passphrase is attempted as WPA2-Personal for the reported
+  wireless adapter, with an explicit diagnostic. This is an adapter workaround;
+  the public schema labels 8 as WPA2-Enterprise, whose EAP setup is not implemented.
   Bluetooth bootstrap version fields are only partially described publicly;
   broader head-unit interoperability still needs testing.
 - **Disconnect** closes the transport promptly. Car-initiated shutdown is acknowledged;
@@ -153,6 +167,7 @@ media sessions. It does not bypass an app's library-access or playback-capture p
   and active media integration.
 - `protocol`: framing, protobuf decoding, TLS, discovery, channel negotiation,
   bounded video flow control, and protocol tests without Android dependencies.
+- `veloce-patches`: independent Morphe patch-bundle build and Waze compatibility patch.
 - [Foundation brief](FOUNDATION.md): agreed scope, constraints, and primary references.
 
 ## License

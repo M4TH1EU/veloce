@@ -8,7 +8,11 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
+import android.os.Binder
+import android.os.IBinder
+import android.os.IInterface
 import android.os.Looper
+import android.os.Parcel
 import android.view.Surface
 import androidx.car.app.*
 import androidx.car.app.model.Action
@@ -19,6 +23,7 @@ import androidx.car.app.model.TemplateWrapper
 import androidx.car.app.navigation.INavigationManager
 import androidx.car.app.navigation.INavigationHost
 import androidx.car.app.serialization.Bundleable
+import androidx.car.app.serialization.Bundler
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
 import ch.broillet.veloce.ui.CarNavigation
@@ -62,6 +67,17 @@ class CarAppHostTest {
         assertTrue(host.template is MessageTemplate)
         assertTrue(logs.any { "API=7" in it })
         assertEquals(Configuration.UI_MODE_NIGHT_YES, endpoint.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK)
+        assertTrue(endpoint.managerResponses[0] is IAppManager)
+        assertTrue(endpoint.managerResponses[1] is INavigationManager)
+        assertTrue(endpoint.managerResponses.none { it is IBinder })
+    }
+
+    @Test fun localManagerInterfacesAreAlsoAccepted() {
+        endpoint.remoteManagers = false
+        host.connect()
+        await { host.template != null || host.error != null }
+        assertNull(host.error)
+        assertTrue(host.template is MessageTemplate)
     }
 
     @Test fun invalidationAndBackAreDeliveredToApp() {
@@ -254,9 +270,11 @@ class CarAppHostTest {
     }
 
     private class AppEndpoint : ICarApp.Stub() {
-        val calls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        val calls: MutableList<String> = java.util.concurrent.CopyOnWriteArrayList()
         var rejectHandshake = false
         var ignoreInfo = false
+        var remoteManagers = true
+        val managerResponses = mutableListOf<Any>()
         lateinit var carHost: ICarHost
         lateinit var configuration: Configuration
         private val appManager = object : IAppManager.Stub() {
@@ -288,7 +306,26 @@ class CarAppHostTest {
         }
         override fun getManager(type: String, callback: IOnDoneCallback) {
             calls.add("manager:$type")
-            callback.onSuccess(Bundleable.create(if (type == CarContext.APP_SERVICE) appManager.asBinder() else navigation.asBinder()))
+            val manager = if (type == CarContext.APP_SERVICE) appManager else navigation
+            val response = if (remoteManagers) remoteResponse(manager) else Bundleable.create(manager)
+            managerResponses.add(response.get())
+            callback.onSuccess(response)
+        }
+
+        private fun remoteResponse(manager: IInterface): Bundleable {
+            // Force Stub.asInterface to create a Proxy, as it does across Android processes.
+            val binder = object : Binder() {
+                override fun queryLocalInterface(descriptor: String): IInterface? = null
+                override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean =
+                    manager.asBinder().transact(code, data, reply, flags)
+            }
+            val bundle = Bundler.toBundle(manager).apply { putBinder("tag_value", binder) }
+            val parcel = Parcel.obtain()
+            return try {
+                parcel.writeBundle(bundle)
+                parcel.setDataPosition(0)
+                Bundleable.CREATOR.createFromParcel(parcel)
+            } finally { parcel.recycle() }
         }
         override fun onAppStart(callback: IOnDoneCallback) { calls.add("start"); callback.onSuccess(null) }
         override fun onAppResume(callback: IOnDoneCallback) { calls.add("resume"); callback.onSuccess(null) }

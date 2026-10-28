@@ -5,12 +5,10 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.MacAddress
 import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiNetworkSpecifier
 import androidx.core.content.edit
 import ch.broillet.veloce.protocol.CarLink
 import ch.broillet.veloce.protocol.Proto
@@ -135,16 +133,8 @@ internal class WirelessConnector(context: Context, private val address: String, 
 
     private fun join(wifi: Proto): Pair<Network, String> {
         status("Joining the car's Wi-Fi · accept Android's connection prompt")
-        val password = wifi.text(2)
-        val security = wifi.number(4)
-        if (!(security == 1L && password.isEmpty() || security in 4L..6L && password.isNotEmpty())) {
-            throw IOException("The car uses an unsupported Wi-Fi security mode or invalid credentials (mode $security)")
-        }
-        val specifier = WifiNetworkSpecifier.Builder().setSsid(wifi.text(1)).apply {
-            runCatching { MacAddress.fromString(wifi.text(3)) }.getOrNull()
-                ?.takeIf { it.toString() != "00:00:00:00:00:00" }?.let(::setBssid)
-            if (password.isNotEmpty()) setWpa2Passphrase(password)
-        }.build()
+        val specifier = carWifiSpecifier(wifi)
+        if (wifi.number(4) == 8L) status("Wi-Fi mode 8 · trying WPA2-Personal adapter compatibility")
         val available = CompletableFuture<Pair<Network, String>>()
         resources.own(Closeable { available.completeExceptionally(IOException("Wi-Fi request cancelled")) })
         val callback = object : ConnectivityManager.NetworkCallback() {
