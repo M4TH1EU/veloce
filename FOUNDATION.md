@@ -1,7 +1,8 @@
 # Foundation brief
 
-Status: implementation reviewed and desktop checks passing; actual Android/car
-connection and projection remain unvalidated.
+Status: the owner reports basic launcher projection tested over both USB and
+wireless. AndroidX app hosting is implemented as an experimental subset and
+still requires validation against the intended patched navigation apps.
 
 ## Confirmed direction
 
@@ -31,12 +32,17 @@ connection and projection remain unvalidated.
 - Negotiated private virtual display, surface-input H.264 encoder, and car input dispatch.
 - Shared car UI in a selectable resolution/DPI preview using a TextureView-backed display.
 - Car-initiated shutdown acknowledgement, native-focus handling, and local connection logs.
+- In-app AndroidX host: API negotiation up to 7, app lifecycle/actions, common
+  templates, map surfaces/gestures, navigation alerts, and error diagnostics.
 
 Twenty-three protocol tests include a simulated head unit completing real JDK TLS,
 channel negotiation, fragmented video packet delivery, keepalive, input, and shutdown.
 Two app-module JVM tests cover coordinate scaling and resource ownership. Physical
-Android rendering, encoder behavior, Bluetooth/Wi-Fi setup, and car acceptance still
-need hardware validation. App hosting and forwarded audio remain unimplemented.
+Android rendering, encoder behavior, Bluetooth/Wi-Fi setup, and car acceptance have
+had an initial owner test, not exhaustive hardware validation. AndroidX host
+contracts now have Robolectric coverage; actual app hosting and forwarded audio
+still need further work and device validation. See README for the host subset and
+its explicit limitations, including fixed night mode and no background navigation.
 
 ## Implementation review
 
@@ -186,3 +192,15 @@ Reference-project source has not been imported. Protocol reference selection and
 dependency/license review remain separate from the owner's license decision.
 Default identity files are downloaded at runtime from the pinned public reference,
 with SHA-256 checksums, and are not bundled in the application or repository.
+
+The AndroidX host was independently implemented against the official 1.7.0
+source artifact and public navigation/map documentation. No reference-project
+implementation was used for this feature. Unit-test Binder endpoints live only
+in the app's test source set; no separate test application is built or required.
+
+Host implementation references:
+
+- [Official AndroidX 1.7.0 source artifact](https://dl.google.com/dl/android/maven2/androidx/car/app/app/1.7.0/app-1.7.0-sources.jar):
+  CarAppBinder, AppManager, Bundleable, SurfaceContainer, and template/delegate contracts.
+- [Drawing maps and surface bounds](https://developer.android.com/training/cars/apps/library/draw-maps).
+- [Map gestures and pan mode](https://developer.android.com/training/cars/apps/library/interact-map).

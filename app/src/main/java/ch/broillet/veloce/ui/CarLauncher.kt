@@ -26,6 +26,7 @@ import androidx.core.graphics.drawable.toBitmap
 import ch.broillet.veloce.R
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
+import ch.broillet.veloce.hosting.CarAppContent
 import ch.broillet.veloce.media.NowPlaying
 import ch.broillet.veloce.projection.ScreenSpec
 import kotlinx.coroutines.Dispatchers
@@ -36,8 +37,13 @@ import java.util.Date
 class CarNavigation {
     var selected by mutableStateOf<CarApp?>(null)
     var player by mutableStateOf(false)
+    var projected by mutableStateOf(true)
+    var appBack: (() -> Unit)? = null
     fun home() { selected = null; player = false }
-    fun back(exit: () -> Unit) { if (selected != null || player) home() else exit() }
+    fun back(exit: () -> Unit) {
+        val hostedBack = appBack
+        if (selected != null && hostedBack != null) hostedBack() else if (selected != null || player) home() else exit()
+    }
 }
 
 @Composable
@@ -62,10 +68,7 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, track: NowPlaying?, naviga
                 navigation.player || selected?.kind == AppKind.AUDIO -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Player(if (selected == null || selected.component.packageName == track?.packageName) track else null, control)
                 }
-                selected != null -> Column(Modifier.weight(1f).padding(20.dp), verticalArrangement = Arrangement.Center) {
-                    Text(selected.label, style = MaterialTheme.typography.headlineSmall)
-                    Text(stringResource(R.string.host_pending), style = MaterialTheme.typography.bodyLarge)
-                }
+                selected != null -> key(selected.component) { CarAppContent(selected, navigation, Modifier.fillMaxWidth().weight(1f)) }
                 apps.isEmpty() -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_apps)) }
                 else -> LazyVerticalGrid(GridCells.Adaptive(136.dp), Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -86,6 +89,9 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, track: NowPlaying?, naviga
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = navigation::home, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.home)) }
+                    if (selected != null || navigation.player) TextButton(onClick = { navigation.back(exit) }, modifier = Modifier.heightIn(min = 56.dp)) {
+                        Text(stringResource(R.string.back))
+                    }
                     TextButton(onClick = { navigation.home(); navigation.player = true }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
                         Text(track?.title ?: stringResource(R.string.now_playing), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }

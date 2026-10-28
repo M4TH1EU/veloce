@@ -16,6 +16,7 @@ android {
     }
 
     buildFeatures { compose = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
 
     buildTypes {
         release {
@@ -39,9 +40,11 @@ dependencies {
     implementation(libs.compose.preview)
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
+    implementation(libs.car.app)
     implementation(libs.lifecycle.compose)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.coroutines.android)
     debugImplementation(libs.compose.tooling)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }

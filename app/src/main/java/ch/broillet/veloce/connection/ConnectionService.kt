@@ -186,6 +186,7 @@ class ConnectionService : Service() {
         override fun focus(projected: Boolean, inputEnabled: Boolean) {
             scope.launch {
                 if (closed.get()) return@launch
+                navigation.projected = projected
                 if (!inputEnabled) window?.cancelInput()
                 if (projected) encoder?.keyFrame()
                 status(if (projected) "Car display focus granted" else "Car display returned to native interface")

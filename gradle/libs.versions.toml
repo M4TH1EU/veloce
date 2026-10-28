@@ -8,6 +8,8 @@ coroutines = "1.11.0"
 core = "1.19.1"
 junit = "4.13.2"
 protobuf = "4.36.2"
+car-app = "1.7.0"
+robolectric = "4.17"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose" }
@@ -22,6 +24,8 @@ lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", v
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }
 protobuf = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
+car-app = { module = "androidx.car.app:app", version.ref = "car-app" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

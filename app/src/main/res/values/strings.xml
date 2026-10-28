@@ -30,6 +30,7 @@
     <string name="share_diagnostics">Share connection log</string>
     <string name="choose_car">Choose a paired car</string>
     <string name="home">Home</string>
+    <string name="back">Back</string>
     <string name="now_playing">Now playing</string>
     <string name="return_to_car">Car</string>
     <string name="start_playback">Start playback on your phone</string>
@@ -38,5 +39,4 @@
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="no_apps">No car apps found. Install an app with an Android Auto interface.</string>
-    <string name="host_pending">The launcher is ready. Opening this app’s car interface is the next development step.</string>
 </resources>
