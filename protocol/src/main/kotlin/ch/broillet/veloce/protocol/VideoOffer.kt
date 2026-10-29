@@ -52,6 +52,6 @@ class VideoOffer(discovery: Proto) {
         ?: throw IOException("The car offered no supported H.264 video configuration")
 
     companion object {
-        val SUPPORTED_KEYS = setOf(3, 4, 19, 20, 21, 22, 23, 66, 65536, 65541)
+        val SUPPORTED_KEYS = setOf(3, 4, 19, 20, 21, 22, 23, 66, 84, 85, 87, 88, 126, 127, 219, 231, 65536, 65541)
     }
 }

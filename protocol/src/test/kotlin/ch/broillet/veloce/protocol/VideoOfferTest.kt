@@ -31,7 +31,7 @@ class VideoOfferTest {
         val offer = VideoOffer(Proto(Proto.build {
             bytes(1, Proto.build { number(1, 2); bytes(4, Proto.build { number(5, 1) }) })
             bytes(1, Proto.build { number(1, 3); bytes(4, Proto.build {
-                listOf(3, 4, 19, 23, 85, 65536, 65541).forEach { number(1, it.toLong()) }
+                listOf(3, 4, 19, 23, 85, 87, 88, 126, 127, 84, 219, 231, 86, 65536, 65541).forEach { number(1, it.toLong()) }
                 bytes(2, Proto.build { number(1, 800); number(2, 480) })
             }) })
             bytes(1, Proto.build { number(1, 7); bytes(3, Proto.build {
@@ -41,7 +41,7 @@ class VideoOfferTest {
             }) })
         }))
         assertEquals(3, offer.inputChannel)
-        assertEquals(listOf(3, 4, 19, 23, 65536, 65541), offer.keys)
+        assertEquals(listOf(3, 4, 19, 23, 85, 87, 88, 126, 127, 84, 219, 231, 65536, 65541), offer.keys)
         val mode = offer.choose(listOf(0, 1))
         assertEquals(800, mode.touchWidth)
         assertEquals(480, mode.touchHeight)

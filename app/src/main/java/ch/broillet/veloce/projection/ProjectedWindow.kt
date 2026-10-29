@@ -42,6 +42,7 @@ class ProjectedWindow(
     val spec: ScreenSpec,
     private val back: () -> Unit,
     private val home: () -> Unit,
+    private val buttons: CarButtons? = null,
     content: @Composable () -> Unit,
 ) : Closeable {
     private val display = checkNotNull(context.getSystemService(DisplayManager::class.java).createVirtualDisplay(
@@ -122,6 +123,7 @@ class ProjectedWindow(
     }
 
     private fun dispatchKey(rawCode: Int, down: Boolean, meta: Int = 0) {
+        if (buttons?.key(rawCode, down) == true) return
         val code = if (rawCode == 65541) KeyEvent.KEYCODE_DPAD_CENTER else rawCode
         if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_HOME) {
             if (!down) if (code == KeyEvent.KEYCODE_BACK) back() else home()
@@ -140,6 +142,7 @@ class ProjectedWindow(
     }
 
     fun cancelInput() {
+        buttons?.cancel()
         if (downTime == 0L) return
         val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
         try { presentation.window?.decorView?.dispatchTouchEvent(event) } finally { event.recycle(); downTime = 0 }

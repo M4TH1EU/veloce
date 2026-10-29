@@ -12,12 +12,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.broillet.veloce.HomeModel
 import ch.broillet.veloce.R
+import ch.broillet.veloce.VeloceApplication
+import ch.broillet.veloce.projection.CarButtons
 import ch.broillet.veloce.projection.ProjectedWindow
 import ch.broillet.veloce.projection.ScreenSpec
 
@@ -59,6 +62,8 @@ fun CarPreview(model: HomeModel, modifier: Modifier, close: () -> Unit) {
 private fun PreviewSurface(model: HomeModel, spec: ScreenSpec, modifier: Modifier, close: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     val navigation = remember { CarNavigation() }
+    val app = LocalContext.current.applicationContext as VeloceApplication
+    val buttons = remember(navigation) { CarButtons({ navigation.mediaKey?.invoke(it) }, { app.connections.log("Assistant button received (not implemented)") }) }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -79,7 +84,7 @@ private fun PreviewSurface(model: HomeModel, spec: ScreenSpec, modifier: Modifie
                         try {
                             texture.setDefaultBufferSize(spec.width, spec.height)
                             val target = Surface(texture).also { surface = it }
-                            projected = ProjectedWindow(context, target, spec, { navigation.back(close) }, navigation::home) {
+                            projected = ProjectedWindow(context, target, spec, { navigation.back(close) }, navigation::home, buttons) {
                                 val catalog by model.state.collectAsStateWithLifecycle()
                                 VeloceTheme { CarLauncher(spec, catalog.apps, navigation, model.media, close) }
                             }

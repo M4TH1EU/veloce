@@ -110,7 +110,9 @@ class CarSessionTest {
                         bytes(4, Proto.build { number(1, 2); number(2, 2); number(5, 240) })
                     })
                 })
-                bytes(1, Proto.build { number(1, 11); bytes(4, Proto.build { number(1, 4); number(1, 23) }) })
+                bytes(1, Proto.build { number(1, 11); bytes(4, Proto.build {
+                    listOf(4, 23, 85, 87, 88, 126, 127, 219, 231).forEach { number(1, it.toLong()) }
+                }) })
                 if (withAudio) bytes(1, Proto.build {
                     number(1, 9)
                     bytes(3, Proto.build {
@@ -126,6 +128,7 @@ class CarSessionTest {
             opened.forEach { assertEquals(7, it.second); send(it.first, 8, Proto.build { number(1, 0) }, control = true) }
             val setup = List(opened.size) { read() }
             assertEquals(setOf(0x8000, 0x8002), setup.map { it.second }.toSet())
+            assertEquals(listOf(4, 23, 85, 87, 88, 126, 127, 219, 231), Proto(setup.single { it.first == 11 }.third).integers(1))
             if (media) {
                 assertEquals(1L, Proto(setup.single { it.first == 9 }.third).number(1))
                 send(9, 0x8003, Proto.build { number(1, 2); number(2, 1); number(3, 0) })

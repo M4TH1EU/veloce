@@ -15,9 +15,11 @@ Android 14+, with no Google Play services or root dependency.
 - Phone-side setup, connection status, disconnect action, and shareable local diagnostics.
 - Media playback capture forwarded through negotiated PCM/AAC audio sinks over USB or Wi-Fi.
 - A basic direct-Bluetooth audio mode using Android's normal output routing.
+- Basic notification inbox/banners, hardware media keys, and an assistant-button no-op.
 
 The owner has tested wired and wireless projection and patched Waze rendering.
-The new audio forwarding, automatic wireless startup, and remaining hardware
+The owner has also confirmed forwarded media audio over wireless; wired audio,
+automatic wireless startup, notifications/buttons and remaining hardware
 workflows still need device validation.
 Desktop tests do not establish compatibility with a particular head unit or app build.
 
@@ -184,8 +186,17 @@ Active-session fallback controls require notification access; a successfully
 connected media library supplies its own controller without that permission.
 Playback-capture authorization is separate from media-control access.
 
-Notification contents are not read by Veloce. The listener is used to obtain active
-media sessions. It does not bypass an app's library-access or playback-capture policy.
+Notification access also enables a basic car inbox and temporary text banners.
+Contents stay in memory and out of connection logs. **Hide** is local to Veloce;
+reply, read-aloud and notification actions are not implemented. Existing installs
+may need conversations/alerting/silent types enabled in Android's notification-access
+settings because the previous version requested ongoing notifications only.
+This access does not bypass an app's library-access or playback-capture policy.
+
+Advertised next, previous, play/pause, play and pause buttons control active media
+regardless of the visible page, including while a map is open. Repeated key-down
+reports do not repeat the action. Assistant presses are handled and logged without
+starting voice input, STT, TTS or an assistant.
 
 ## Verified scope and limitations
 

@@ -18,6 +18,7 @@ import ch.broillet.veloce.VeloceApplication
 import ch.broillet.veloce.apps.CarApps
 import ch.broillet.veloce.audio.PlaybackCapture
 import ch.broillet.veloce.projection.ProjectedWindow
+import ch.broillet.veloce.projection.CarButtons
 import ch.broillet.veloce.projection.ScreenSpec
 import ch.broillet.veloce.projection.VideoEncoder
 import ch.broillet.veloce.protocol.CarLink
@@ -123,6 +124,9 @@ class ConnectionService : Service() {
         private var window: ProjectedWindow? = null
         @Volatile private var renderJob: Job? = null
         private val navigation = CarNavigation()
+        private val buttons = CarButtons({ navigation.mediaKey?.invoke(it) }, {
+            app.connections.log("Assistant button received (not implemented)")
+        })
         private val id = UUID.randomUUID().toString()
         private var audioSink: AudioSink? = null
         private var capture: PlaybackCapture? = null
@@ -255,7 +259,7 @@ class ConnectionService : Service() {
                     val spec = ScreenSpec(mode.width, mode.height, mode.density, mode.cropX, mode.cropY,
                         mode.touchWidth, mode.touchHeight)
                     window = ProjectedWindow(this@ConnectionService, prepared.surface, spec,
-                        { navigation.back(::exit) }, navigation::home) {
+                        { navigation.back(::exit) }, navigation::home, buttons) {
                         VeloceTheme { CarLauncher(spec, apps, navigation, app.media, ::exit) }
                     }
                     prepared.start()
@@ -302,6 +306,7 @@ class ConnectionService : Service() {
         fun stop() {
             if (!closed.compareAndSet(false, true)) return
             stopAudio()
+            buttons.cancel()
             app.connections.audio("Audio disconnected", request = null, capturing = false)
             renderJob?.cancel()
             session?.close()

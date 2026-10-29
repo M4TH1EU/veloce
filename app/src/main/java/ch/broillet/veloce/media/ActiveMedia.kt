@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.media.MediaMetadata
+import android.media.AudioManager
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -24,6 +25,7 @@ data class NowPlaying(
 class ActiveMedia(context: Context) {
     private val manager = context.getSystemService(MediaSessionManager::class.java)
     private val notifications = context.getSystemService(NotificationManager::class.java)
+    private val audio = context.getSystemService(AudioManager::class.java)
     val listener = ComponentName(context, MediaAccessService::class.java)
     private val main = Handler(Looper.getMainLooper())
     private val controllers = mutableListOf<MediaController>()
@@ -102,9 +104,14 @@ class ActiveMedia(context: Context) {
             controllers.firstOrNull { it.packageName == packageName && it.playbackState?.state == PlaybackState.STATE_PLAYING }
                 ?: controllers.firstOrNull { it.packageName == packageName }
         controller ?: return false
-        if ((controller.playbackState?.actions ?: 0) and action == 0L) return false
+        val actions = controller.playbackState?.actions ?: 0
+        val command = if (action == PlaybackState.ACTION_PLAY_PAUSE) {
+            val next = if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
+            if (actions and next != 0L) next else action
+        } else action
+        if (actions and command == 0L) return false
         return try {
-            when (action) {
+            when (command) {
                 PlaybackState.ACTION_PLAY -> controller.transportControls.play()
                 PlaybackState.ACTION_PAUSE -> controller.transportControls.pause()
                 PlaybackState.ACTION_PLAY_PAUSE -> {
@@ -121,5 +128,23 @@ class ActiveMedia(context: Context) {
             refresh()
             false
         }
+    }
+
+    fun key(code: Int, library: MediaLibrary? = null): Boolean {
+        val action = when (code) {
+            KeyEvent.KEYCODE_MEDIA_PLAY -> PlaybackState.ACTION_PLAY
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> PlaybackState.ACTION_PAUSE
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> PlaybackState.ACTION_PLAY_PAUSE
+            KeyEvent.KEYCODE_MEDIA_NEXT -> PlaybackState.ACTION_SKIP_TO_NEXT
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> PlaybackState.ACTION_SKIP_TO_PREVIOUS
+            else -> return false
+        }
+        val active = nowPlaying.value
+        val browser = library?.nowPlaying
+        val track = active?.takeIf { it.playing } ?: browser?.takeIf { it.playing } ?: active ?: browser
+        if (track != null) return if (track === browser) library.control(action) else control(action, track.packageName)
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        return true
     }
 }

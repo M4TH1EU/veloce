@@ -39,9 +39,12 @@ class CarNavigation {
     var selected by mutableStateOf<CarApp?>(null)
     var player by mutableStateOf(false)
     var projected by mutableStateOf(true)
+    var notificationsOpen by mutableStateOf(false)
     var appBack: (() -> Unit)? = null
-    fun home() { selected = null; player = false }
+    var mediaKey: ((Int) -> Unit)? = null
+    fun home() { selected = null; player = false; notificationsOpen = false }
     fun back(exit: () -> Unit) {
+        if (notificationsOpen) { notificationsOpen = false; return }
         if (player) { player = false; return }
         val hostedBack = appBack
         if (selected != null && hostedBack != null) hostedBack() else if (selected != null) home() else exit()
@@ -51,8 +54,11 @@ class CarNavigation {
 @Composable
 fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation, media: ActiveMedia, exit: () -> Unit) {
     val context = LocalContext.current
+    val app = context.applicationContext as VeloceApplication
+    val notifications = app.notifications
+    val notices by notifications.notices.collectAsStateWithLifecycle()
     val workspace = remember(context, navigation) {
-        CarWorkspace(context, navigation, (context.applicationContext as VeloceApplication).connections::log)
+        CarWorkspace(context, navigation, app.connections::log)
     }
     DisposableEffect(workspace) { onDispose { workspace.close() } }
     val selected = navigation.selected
@@ -71,8 +77,9 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation,
     val control: (Long) -> Boolean = { action ->
         libraryPlayer?.control(action) ?: media.control(action, playerTrack?.packageName)
     }
-    LaunchedEffect(host, selected, navigation.player, navigation.projected) { workspace.updateVisibility() }
+    LaunchedEffect(host, selected, navigation.player, navigation.projected, navigation.notificationsOpen) { workspace.updateVisibility() }
     SideEffect {
+        navigation.mediaKey = { media.key(it, workspace.library) }
         navigation.appBack = when {
             selected?.kind == AppKind.AUDIO -> ({ if (library?.back() != true) navigation.home() })
             selected != null && selected.component == host?.app?.component -> host::back
@@ -86,57 +93,69 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation,
     val horizontal = with(LocalDensity.current) { (spec.cropX / 2).toDp() }
     val vertical = with(LocalDensity.current) { (spec.cropY / 2).toDp() }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.padding(horizontal = horizontal, vertical = vertical).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(navigation.selected?.label ?: stringResource(if (navigation.player) R.string.now_playing else R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(clock, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
-            }
-            if (host?.navigating == true && (selected?.component != host.app.component || navigation.player)) {
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.padding(horizontal = horizontal, vertical = vertical).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { workspace.open(host.app) }, modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.resume_navigation, host.app.label), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (navigation.notificationsOpen) stringResource(R.string.notifications)
+                        else navigation.selected?.label ?: stringResource(if (navigation.player) R.string.now_playing else R.string.app_name),
+                        style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(clock, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+                    TextButton(onClick = { navigation.notificationsOpen = !navigation.notificationsOpen }) {
+                        Text(stringResource(R.string.notification_count, notices.size))
                     }
-                    TextButton(onClick = host::stopNavigation) { Text(stringResource(R.string.stop_navigation)) }
                 }
-            }
-            when {
-                navigation.player -> MediaPlayer(playerTrack, control, Modifier.fillMaxWidth().weight(1f),
-                    if (selected?.kind == AppKind.AUDIO || libraryPlayer != null) library?.playbackError else null)
-                selected?.kind == AppKind.AUDIO && library != null -> MediaLibraryContent(library, { navigation.player = true }, Modifier.fillMaxWidth().weight(1f))
-                selected != null && host != null -> key(host) { CarAppContent(host, navigation::home, Modifier.fillMaxWidth().weight(1f)) }
-                apps.isEmpty() -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_apps)) }
-                else -> LazyVerticalGrid(GridCells.Adaptive(136.dp), Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(apps, key = { it.component.flattenToString() }) { app ->
-                        var focused by remember { mutableStateOf(false) }
-                        Card(onClick = { workspace.open(app) }, modifier = Modifier
-                            .onFocusChanged { focused = it.hasFocus }
-                            .border(2.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))) {
-                            Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                AppIcon(app)
-                                Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                if (host?.navigating == true && (selected?.component != host.app.component || navigation.player || navigation.notificationsOpen)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { workspace.open(host.app) }, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.resume_navigation, host.app.label), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = host::stopNavigation) { Text(stringResource(R.string.stop_navigation)) }
+                    }
+                }
+                when {
+                    navigation.notificationsOpen -> CarNotificationsContent(notifications, Modifier.fillMaxWidth().weight(1f))
+                    navigation.player -> MediaPlayer(playerTrack, control, Modifier.fillMaxWidth().weight(1f),
+                        if (selected?.kind == AppKind.AUDIO || libraryPlayer != null) library?.playbackError else null)
+                    selected?.kind == AppKind.AUDIO && library != null -> MediaLibraryContent(library, { navigation.player = true }, Modifier.fillMaxWidth().weight(1f))
+                    selected != null && host != null -> key(host) { CarAppContent(host, navigation::home, Modifier.fillMaxWidth().weight(1f)) }
+                    apps.isEmpty() -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_apps)) }
+                    else -> LazyVerticalGrid(GridCells.Adaptive(136.dp), Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(apps, key = { it.component.flattenToString() }) { app ->
+                            var focused by remember { mutableStateOf(false) }
+                            Card(onClick = { workspace.open(app) }, modifier = Modifier
+                                .onFocusChanged { focused = it.hasFocus }
+                                .border(2.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    AppIcon(app)
+                                    Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                                }
                             }
                         }
                     }
                 }
-            }
-            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = navigation::home, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.home)) }
-                    if (selected != null || navigation.player) TextButton(onClick = { navigation.back(exit) }, modifier = Modifier.heightIn(min = 56.dp)) {
-                        Text(stringResource(R.string.back))
+                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = navigation::home, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.home)) }
+                        if (selected != null || navigation.player || navigation.notificationsOpen) TextButton(onClick = { navigation.back(exit) }, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text(stringResource(R.string.back))
+                        }
+                        TextButton(onClick = {
+                            if (library != null && library.app.component.packageName == currentTrack?.packageName) workspace.open(library.app)
+                            else navigation.home()
+                            navigation.notificationsOpen = false
+                            navigation.player = true
+                        }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
+                            Text(currentTrack?.title ?: stringResource(R.string.now_playing), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = exit, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.return_to_car)) }
                     }
-                    TextButton(onClick = {
-                        if (library != null && library.app.component.packageName == currentTrack?.packageName) workspace.open(library.app)
-                        else navigation.home()
-                        navigation.player = true
-                    }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
-                        Text(currentTrack?.title ?: stringResource(R.string.now_playing), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    TextButton(onClick = exit, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.return_to_car)) }
                 }
+            }
+            if (navigation.projected && !navigation.notificationsOpen) {
+                CarNotificationBanner(notifications, { navigation.notificationsOpen = true },
+                    Modifier.align(Alignment.TopCenter).padding(horizontal = horizontal + 16.dp, vertical = vertical + 16.dp))
             }
         }
     }

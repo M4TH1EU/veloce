@@ -43,11 +43,12 @@ class CarWorkspace(
         }
         navigation.selected = app
         navigation.player = false
+        navigation.notificationsOpen = false
         updateVisibility()
     }
 
     fun updateVisibility() {
-        host?.setVisible(navigation.projected && navigation.selected?.component == host?.app?.component && !navigation.player)
+        host?.setVisible(navigation.projected && navigation.selected?.component == host?.app?.component && !navigation.player && !navigation.notificationsOpen)
     }
 
     override fun close() {
@@ -58,6 +59,7 @@ class CarWorkspace(
         host = null
         library = null
         navigation.appBack = null
+        navigation.mediaKey = null
         navigation.home()
     }
 }

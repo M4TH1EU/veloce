@@ -22,9 +22,9 @@
     <string name="apply">Apply</string>
     <string name="cancel">Cancel</string>
     <string name="preview_error">Could not create the preview: %1$s</string>
-    <string name="media_access_label">Veloce media controls</string>
-    <string name="media_description">Optional notification access enables active media controls on the car screen. It does not unlock library browsing or forward audio.</string>
-    <string name="enable_media">Enable media controls</string>
+    <string name="media_access_label">Veloce notifications and media</string>
+    <string name="media_description">Optional notification access shows notification text and enables active media controls on the car screen. Contents stay in memory and are not included in logs. It does not unlock library browsing or forward audio.</string>
+    <string name="enable_media">Enable notification access</string>
     <string name="manage_media">Manage access</string>
     <string name="media_unavailable">The media session is no longer available.</string>
     <string name="share_diagnostics">Share connection log</string>
@@ -57,4 +57,9 @@
     <string name="audio_adb_commands">Skip the sharing prompt:\nadb shell appops set ch.broillet.veloce PROJECT_MEDIA allow\n\nKeep notification contents visible during audio sharing:\nadb shell pm grant ch.broillet.veloce android.permission.WRITE_SECURE_SETTINGS\n\nVeloce restores the notification setting and its media mute when sharing ends.</string>
     <string name="enable_auto_connect">Enable wireless auto-connect</string>
     <string name="disable_auto_connect">Disable wireless auto-connect</string>
+    <string name="notifications">Notifications</string>
+    <string name="notification_count">Notifications (%1$d)</string>
+    <string name="no_notifications">No notifications</string>
+    <string name="notification_access_needed">Enable notification access in Veloce on your phone. If access was already enabled, check that conversations, alerting and silent notifications are allowed in Android’s notification access settings.</string>
+    <string name="hide_notification">Hide</string>
 </resources>

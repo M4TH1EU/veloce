@@ -41,6 +41,7 @@ still requires validation against the intended patched navigation apps.
 - Negotiated PCM/AAC media audio over either transport, session-owned playback
   capture, consent/revocation handling, and local mute/notification-setting restoration.
 - Minimal direct-Bluetooth mode and optional companion-device wireless startup.
+- Basic notification inbox/banners and hardware media keys; assistant input is a logged no-op.
 - Parked-only app actions are forwarded without sensor gating by owner request.
 
 Protocol tests include a simulated head unit completing real JDK TLS,
@@ -49,7 +50,7 @@ Two app-module JVM tests cover coordinate scaling and resource ownership. Physic
 Android rendering, encoder behavior, Bluetooth/Wi-Fi setup, and car acceptance have
 had an initial owner test, not exhaustive hardware validation. AndroidX host
 contracts now have Robolectric coverage; the owner reports working Waze rendering,
-while forwarded audio still needs device validation. See README for the host subset and
+and forwarded media audio over wireless; wired audio still needs device validation. See README for the host subset and
 its explicit limitations, including fixed night mode and unverified background
 location/guidance behavior in the intended navigation builds.
 

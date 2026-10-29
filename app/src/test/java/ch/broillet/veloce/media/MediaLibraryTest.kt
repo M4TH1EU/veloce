@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.media.session.PlaybackState
 import android.os.Looper
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -103,6 +104,16 @@ class MediaLibraryTest {
         assertTrue(library.control(PlaybackState.ACTION_PAUSE))
         await { !service.get().player.playWhenReady }
         assertFalse(library.control(PlaybackState.ACTION_SET_RATING))
+    }
+
+    @Test fun hardwareKeysControlTheLibraryWithoutNotificationAccess() {
+        library.connect()
+        await { !library.page.loading }
+        val media = ActiveMedia(RuntimeEnvironment.getApplication())
+        assertTrue(media.key(KeyEvent.KEYCODE_MEDIA_PLAY, library))
+        await { service.get().player.playWhenReady }
+        assertTrue(media.key(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, library))
+        await { !service.get().player.playWhenReady }
     }
 
     @Test fun browseRefusalDoesNotDiscardPlaybackControls() {
