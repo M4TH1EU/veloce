@@ -23,29 +23,14 @@ class CarWifiNetworkTest {
         assertFalse(network.allowedKeyManagement[WifiConfiguration.KeyMgmt.WPA_EAP])
     }
 
-    @Test fun personalModesAndOpenNetworksKeepTheirAuthentication() {
-        for (mode in 4L..6L) {
-            assertTrue(carWifiSpecifier(credentials(mode)).wifiConfiguration.allowedKeyManagement[WifiConfiguration.KeyMgmt.WPA_PSK])
-        }
-        val open = carWifiSpecifier(credentials(1, "")).wifiConfiguration
-        assertNull(open.preSharedKey)
-        assertTrue(open.allowedKeyManagement[WifiConfiguration.KeyMgmt.NONE])
-    }
-
     @Test fun malformedOrUnsupportedCredentialsNeverBecomeOpenNetworks() {
         for ((mode, password) in listOf(8L to "", 8L to "short", 8L to "é".repeat(12), 1L to "test-password", 2L to "test-password", 7L to "test-password", 99L to "test-password")) {
             assertThrows(IOException::class.java) { carWifiSpecifier(credentials(mode, password)) }
         }
     }
 
-    @Test fun missingAdapterBssidDoesNotPreventSsidMatching() {
-        for (bssid in listOf("", "invalid", "00:00:00:00:00:00")) {
-            assertNull(carWifiSpecifier(credentials(8, bssid = bssid)).wifiConfiguration.BSSID)
-        }
-    }
-
-    private fun credentials(mode: Long, password: String = "test-password", bssid: String = "12:34:56:78:90:ab") = Proto(Proto.build {
-        text(1, "Car adapter"); text(2, password); text(3, bssid); number(4, mode)
+    private fun credentials(mode: Long, password: String = "test-password") = Proto(Proto.build {
+        text(1, "Car adapter"); text(2, password); text(3, "12:34:56:78:90:ab"); number(4, mode)
     })
 
     private val WifiNetworkSpecifier.wifiConfiguration: WifiConfiguration

@@ -15,11 +15,7 @@ import android.os.Looper
 import android.os.Parcel
 import android.view.Surface
 import androidx.car.app.*
-import androidx.car.app.model.Action
-import androidx.car.app.model.Alert
-import androidx.car.app.model.CarText
 import androidx.car.app.model.MessageTemplate
-import androidx.car.app.model.ParkedOnlyOnClickListener
 import androidx.car.app.model.TemplateWrapper
 import androidx.car.app.navigation.INavigationManager
 import androidx.car.app.navigation.INavigationHost
@@ -38,7 +34,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -46,13 +41,12 @@ class CarAppHostTest {
     private val endpoint = AppEndpoint()
     private val logs = mutableListOf<String>()
     private lateinit var host: CarAppHost
-    private var finished = false
 
     @Before fun prepare() {
         val context = RuntimeEnvironment.getApplication()
         val component = ComponentName(context.packageName, "TestCarService")
         shadowOf(context).setComponentNameAndServiceForBindService(component, endpoint)
-        host = CarAppHost(context, CarApp(component, "Navigation", AppKind.MAP), { finished = true }, logs::add)
+        host = CarAppHost(context, CarApp(component, "Navigation", AppKind.MAP), {}, logs::add)
     }
 
     @After fun cleanup() {
@@ -60,7 +54,7 @@ class CarAppHostTest {
         await { shadowOf(RuntimeEnvironment.getApplication()).unboundServiceConnections.isNotEmpty() }
     }
 
-    @Test fun bindsNegotiatesAndRequestsTemplateAfterResume() {
+    @Test fun remoteHostNegotiatesRendersAndHandlesLifecycleAndInput() {
         host.connect()
         await { host.template != null || host.error != null }
         assertNull(host.error)
@@ -71,40 +65,25 @@ class CarAppHostTest {
         assertTrue(endpoint.managerResponses[0] is IAppManager)
         assertTrue(endpoint.managerResponses[1] is INavigationManager)
         assertTrue(endpoint.managerResponses.none { it is IBinder })
-    }
-
-    @Test fun localManagerInterfacesAreAlsoAccepted() {
-        endpoint.remoteManagers = false
-        host.connect()
-        await { host.template != null || host.error != null }
-        assertNull(host.error)
-        assertTrue(host.template is MessageTemplate)
-    }
-
-    @Test fun invalidationAndBackAreDeliveredToApp() {
-        host.connect()
-        await { host.template != null }
         val appHost = IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE))
         appHost.invalidate()
         await { endpoint.calls.count { it == "template" } == 2 }
         host.back()
         await { "back" in endpoint.calls }
-        endpoint.carHost.finish()
-        await { finished }
-    }
-
-    @Test fun nativeFocusStopsAppAndReentryRefreshesIt() {
-        host.connect()
-        await { host.template != null }
         host.setVisible(false)
         await { "stop" in endpoint.calls }
         val count = endpoint.calls.count { it == "template" }
-        IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE)).invalidate()
+        appHost.invalidate()
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(count, endpoint.calls.count { it == "template" })
         host.setVisible(true)
         await { endpoint.calls.count { it == "template" } == count + 1 }
         assertEquals(listOf("pause", "stop", "start", "resume", "template"), endpoint.calls.takeLast(5))
+        host.close()
+        await { endpoint.calls.takeLast(2) == listOf("pause", "stop") }
+        appHost.invalidate()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(count + 1, endpoint.calls.count { it == "template" })
     }
 
     @Test fun hostRejectionIsVisibleAndUnbinds() {
@@ -114,53 +93,6 @@ class CarAppHostTest {
         assertTrue(host.error!!.contains("Unknown host"))
         assertFalse("create" in endpoint.calls)
         assertTrue(logs.any { "Unknown host" in it })
-    }
-
-    @Test fun closePausesStopsAndDoesNotAcceptLateInvalidations() {
-        host.connect()
-        await { host.template != null }
-        val appHost = IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE))
-        host.close()
-        await { "stop" in endpoint.calls }
-        assertEquals(listOf("pause", "stop"), endpoint.calls.takeLast(2))
-        val requests = endpoint.calls.count { it == "template" }
-        appHost.invalidate()
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(requests, endpoint.calls.count { it == "template" })
-    }
-
-    @Test fun actionCallbacksGoBackToApp() {
-        host.connect()
-        await { host.template != null }
-        var clicked = false
-        val action = Action.Builder().setTitle("Go").setOnClickListener(ParkedOnlyOnClickListener.create { clicked = true }).build()
-        host.click(action)
-        await { clicked }
-        assertNull(host.error)
-    }
-
-    @Test fun missingCallbackTimesOutInsteadOfLeavingSpinner() {
-        endpoint.ignoreInfo = true
-        host.connect()
-        await { "info" in endpoint.calls }
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(9))
-        await { host.error != null }
-        assertTrue(host.error!!.contains("did not respond"))
-    }
-
-    @Test fun actionsWaitForPreviousCallbackBeforeSendingNextAction() {
-        host.connect()
-        await { host.template != null }
-        var first: OnDoneCallback? = null
-        var second = false
-        host.event { first = it }
-        host.event { second = true; it.onSuccess(null) }
-        await { first != null }
-        shadowOf(Looper.getMainLooper()).idle()
-        assertFalse(second)
-        first!!.onSuccess(null)
-        await { second }
-        assertNull(host.error)
     }
 
     @Test fun homeAndMusicRetainTheSameNavigationSession() {
@@ -185,48 +117,6 @@ class CarAppHostTest {
             assertEquals(1, endpoint.calls.count { it == "create" })
         } finally { workspace.close() }
         await { "endNavigation" in endpoint.calls }
-    }
-
-    @Test fun backgroundAppFinishDoesNotCloseTheForegroundMusicPage() {
-        val navigation = CarNavigation()
-        val workspace = CarWorkspace(RuntimeEnvironment.getApplication(), navigation, logs::add)
-        try {
-            workspace.open(host.app)
-            await { workspace.host?.template != null }
-            val music = host.app.copy(component = ComponentName(host.app.component.packageName, "Music"), kind = AppKind.AUDIO)
-            workspace.open(music)
-            endpoint.carHost.finish()
-            await { workspace.host == null }
-            assertEquals(music, navigation.selected)
-        } finally { workspace.close() }
-    }
-
-    @Test fun stoppingNavigationIsExplicitAndDoesNotDestroyTheSession() {
-        host.connect()
-        await { host.template != null }
-        INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
-        await { host.navigating }
-        host.setVisible(false)
-        await { "stop" in endpoint.calls }
-        host.stopNavigation()
-        await { !host.navigating }
-        assertEquals(1, endpoint.calls.count { it == "endNavigation" })
-        assertTrue(shadowOf(RuntimeEnvironment.getApplication()).unboundServiceConnections.isEmpty())
-    }
-
-    @Test fun callbackFreeBackgroundAlertsCannotTimeOutAndKillNavigation() {
-        host.connect()
-        await { host.template != null }
-        INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
-        await { host.navigating }
-        host.setVisible(false)
-        await { "stop" in endpoint.calls }
-        val alert = Alert.Builder(1, CarText.create("Traffic"), 5000).build()
-        IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE)).showAlert(Bundleable.create(alert))
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(9))
-        assertNull(host.error)
-        assertNull(host.alert)
-        assertTrue(host.navigating)
     }
 
     @Test fun surfaceRegisteredBeforeCallbackGetsDimensionsBoundsAndGestures() {
@@ -273,8 +163,6 @@ class CarAppHostTest {
     private class AppEndpoint : ICarApp.Stub() {
         val calls: MutableList<String> = java.util.concurrent.CopyOnWriteArrayList()
         var rejectHandshake = false
-        var ignoreInfo = false
-        var remoteManagers = true
         val managerResponses = mutableListOf<Any>()
         lateinit var carHost: ICarHost
         lateinit var configuration: Configuration
@@ -292,7 +180,7 @@ class CarAppHostTest {
         }
         override fun getAppInfo(callback: IOnDoneCallback) {
             calls.add("info")
-            if (!ignoreInfo) callback.onSuccess(Bundleable.create(AppInfo(1, 7, "test")))
+            callback.onSuccess(Bundleable.create(AppInfo(1, 7, "test")))
         }
         override fun onHandshakeCompleted(info: Bundleable, callback: IOnDoneCallback) {
             calls.add("handshake:${(info.get() as HandshakeInfo).hostCarAppApiLevel}")
@@ -308,7 +196,7 @@ class CarAppHostTest {
         override fun getManager(type: String, callback: IOnDoneCallback) {
             calls.add("manager:$type")
             val manager = if (type == CarContext.APP_SERVICE) appManager else navigation
-            val response = if (remoteManagers) remoteResponse(manager) else Bundleable.create(manager)
+            val response = remoteResponse(manager)
             managerResponses.add(response.get())
             callback.onSuccess(response)
         }

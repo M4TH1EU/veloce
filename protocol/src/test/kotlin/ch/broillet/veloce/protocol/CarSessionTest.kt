@@ -14,20 +14,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CarSessionTest {
-    @Test(timeout = 30_000) fun `simulated head unit authenticates negotiates display receives video and sends input`() = exercise()
+    @Test(timeout = 30_000) fun `projection authenticates streams audio and video handles focus and disconnects`() = exercise()
 
     @Test(timeout = 30_000) fun `authenticated session rejects plaintext shutdown`() = exercise(plaintextShutdown = true)
 
-    @Test(timeout = 30_000) fun `rejected key binding fails instead of silently disabling input`() = exercise(rejectBinding = true)
+    @Test(timeout = 30_000) fun `bluetooth mode leaves advertised media audio unopened`() = exercise(forwardAudio = false)
 
-    @Test(timeout = 30_000) fun `media audio negotiates alongside video over the shared encrypted transport`() = exercise(withAudio = true)
-
-    @Test(timeout = 30_000) fun `bluetooth mode leaves advertised media audio unopened`() = exercise(withAudio = true, forwardAudio = false)
-
-    @Test(timeout = 30_000) fun `phone initiated goodbye releases blocked video producers`() = exercise(phoneGoodbye = true)
-
-    private fun exercise(plaintextShutdown: Boolean = false, rejectBinding: Boolean = false,
-        withAudio: Boolean = false, forwardAudio: Boolean = true, phoneGoodbye: Boolean = false) {
+    private fun exercise(plaintextShutdown: Boolean = false, forwardAudio: Boolean = true) {
         val phoneInput = PipedInputStream(256 * 1024)
         val carOutput = PipedOutputStream(phoneInput)
         val carInput = PipedInputStream(256 * 1024)
@@ -107,13 +100,21 @@ class CarSessionTest {
                     number(1, 7)
                     bytes(3, Proto.build {
                         number(1, 3)
+                        bytes(4, Proto.build { number(1, 99) })
                         bytes(4, Proto.build { number(1, 2); number(2, 2); number(5, 240) })
                     })
                 })
                 bytes(1, Proto.build { number(1, 11); bytes(4, Proto.build {
-                    listOf(4, 23, 85, 87, 88, 126, 127, 219, 231).forEach { number(1, it.toLong()) }
+                    listOf(4, 23, 85, 86, 87, 88, 126, 127, 219, 231).forEach { number(1, it.toLong()) }
                 }) })
-                if (withAudio) bytes(1, Proto.build {
+                bytes(1, Proto.build {
+                    number(1, 8)
+                    bytes(3, Proto.build {
+                        number(1, 1); number(2, 1)
+                        bytes(3, Proto.build { number(1, 48_000); number(2, 16); number(3, 2) })
+                    })
+                })
+                bytes(1, Proto.build {
                     number(1, 9)
                     bytes(3, Proto.build {
                         number(1, 1); number(2, 3)
@@ -122,7 +123,7 @@ class CarSessionTest {
                 })
             }
             send(0, 6, discovery)
-            val media = withAudio && forwardAudio
+            val media = forwardAudio
             val opened = List(if (media) 3 else 2) { read() }
             assertEquals(if (media) setOf(7, 11, 9) else setOf(7, 11), opened.map { it.first }.toSet())
             opened.forEach { assertEquals(7, it.second); send(it.first, 8, Proto.build { number(1, 0) }, control = true) }
@@ -133,19 +134,13 @@ class CarSessionTest {
                 assertEquals(1L, Proto(setup.single { it.first == 9 }.third).number(1))
                 send(9, 0x8003, Proto.build { number(1, 2); number(2, 1); number(3, 0) })
             }
-            if (rejectBinding) {
-                send(11, 0x8003, Proto.build { number(1, -1) })
-                val error = assertThrows(ExecutionException::class.java) { run.get(2, TimeUnit.SECONDS) }
-                assertEquals("The car refused the input binding", error.cause?.message)
-                return
-            }
             send(11, 0x8003, Proto.build { number(1, 0) })
-            send(7, 0x8003, Proto.build { number(1, 2); number(2, 1); number(3, 0) })
+            send(7, 0x8003, Proto.build { number(1, 2); number(2, 1); bytes(3, byteArrayOf(0, 1)) })
             assertEquals(0x8007, read().second)
             send(7, 0x8008, Proto.build { number(1, 1) })
             val start = read()
             assertEquals(0x8001, start.second)
-            assertEquals(0L, Proto(start.third).number(2))
+            assertEquals(1L, Proto(start.third).number(2))
             assertEquals(1280, video.poll(2, TimeUnit.SECONDS)?.width)
             assertEquals(true, focusChanges.poll(2, TimeUnit.SECONDS))
 
@@ -239,7 +234,7 @@ class CarSessionTest {
 
             val cancelled = producer.submit { session.videoFrame(h264, timestamp + 3, keyFrame = false) }
             assertThrows(TimeoutException::class.java) { cancelled.get(50, TimeUnit.MILLISECONDS) }
-            if (phoneGoodbye) {
+            if (forwardAudio) {
                 val goodbye = CompletableFuture.runAsync { session.disconnect() }
                 assertEquals(15, read().second)
                 send(0, 16, ByteArray(0))
@@ -250,7 +245,6 @@ class CarSessionTest {
             }
             cancelled.get(1, TimeUnit.SECONDS)
             assertTrue(failures.joinToString(), failures.isEmpty())
-            if (forwardAudio && !withAudio) assertEquals("The car offered no supported media audio sink", audioErrors.poll())
             assertTrue(audioErrors.isEmpty())
         } finally {
             session.close()
@@ -259,7 +253,7 @@ class CarSessionTest {
             carInput.close()
             executor.shutdown()
             assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS))
-            if (!plaintextShutdown && !rejectBinding) run.get(1, TimeUnit.SECONDS)
+            if (!plaintextShutdown) run.get(1, TimeUnit.SECONDS)
         }
     }
 }

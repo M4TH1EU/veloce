@@ -79,8 +79,8 @@ private fun PreviewSurface(model: HomeModel, spec: ScreenSpec, modifier: Modifie
                             true
                         }
                     }
-                     override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
-                         error = null
+                    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+                        error = null
                         try {
                             texture.setDefaultBufferSize(spec.width, spec.height)
                             val target = Surface(texture).also { surface = it }

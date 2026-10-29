@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
     private val wirelessPermissions get() = buildList {
         add(Manifest.permission.BLUETOOTH_CONNECT)
         add(Manifest.permission.NEARBY_WIFI_DEVICES)
-        if (Build.VERSION.SDK_INT >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
+        if (Build.VERSION.SDK_INT >= 37) add(Manifest.permission.ACCESS_LOCAL_NETWORK)
     }
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (wirelessPermissions.all { permission -> checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED }) chooseCar()
@@ -73,12 +73,10 @@ class MainActivity : ComponentActivity() {
     }
     private val usbEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                usbPermissionAction -> {
-                    val accessory = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
-                    if (accessory != null && usb.hasPermission(accessory)) model.connections.usb(accessory)
-                    else model.connections.update("USB accessory permission was denied", false, true)
-                }
+            if (intent.action == usbPermissionAction) {
+                val accessory = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
+                if (accessory != null && usb.hasPermission(accessory)) model.connections.usb(accessory)
+                else model.connections.update("USB accessory permission was denied", false, true)
             }
         }
     }

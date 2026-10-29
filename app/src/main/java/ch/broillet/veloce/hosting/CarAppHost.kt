@@ -76,30 +76,27 @@ class CarAppHost(
             if (remote != null) { fail(IllegalStateException("App service reconnected; reopen the app")); return }
             val endpoint = ICarApp.Stub.asInterface(binder)
             remote = endpoint
-            scope.launch {
-                try {
-                    lifecycle.withLock {
-                        val info = request { endpoint.getAppInfo(it) } as? AppInfo
-                            ?: error("App did not return AndroidX AppInfo")
-                        val api = HostApi.negotiate(info.minCarAppApiLevel, info.latestCarAppApiLevel)
-                        log("Car app ${app.component.flattenToShortString()}: library=${info.libraryDisplayVersion}, API=$api")
-                        request { endpoint.onHandshakeCompleted(Bundleable.create(HandshakeInfo(context.packageName, api)), it) }
-                        request { endpoint.onAppCreate(carHost, Intent(Intent.ACTION_MAIN).setComponent(app.component), configuration, it) }
-                        created = true
-                        manager = request { endpoint.getManager(CarContext.APP_SERVICE, it) } as? IAppManager
-                            ?: error("App did not return an AndroidX IAppManager")
-                        navigation = request { endpoint.getManager(CarContext.NAVIGATION_SERVICE, it) } as? INavigationManager
-                            ?: error("App did not return an AndroidX INavigationManager")
-                        updateLifecycle()
-                    }
-                    for (ignored in invalidations) {
-                        if (!started || !visible) continue
-                        val result = request { checkNotNull(manager).getTemplate(it) }
-                        template = (result as? TemplateWrapper)?.template ?: error("App did not return a template")
-                        log("Car app template: ${template?.javaClass?.simpleName}")
-                    }
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { fail(failure) }
+            launch {
+                lifecycle.withLock {
+                    val info = request { endpoint.getAppInfo(it) } as? AppInfo
+                        ?: error("App did not return AndroidX AppInfo")
+                    val api = HostApi.negotiate(info.minCarAppApiLevel, info.latestCarAppApiLevel)
+                    log("Car app ${app.component.flattenToShortString()}: library=${info.libraryDisplayVersion}, API=$api")
+                    request { endpoint.onHandshakeCompleted(Bundleable.create(HandshakeInfo(context.packageName, api)), it) }
+                    request { endpoint.onAppCreate(carHost, Intent(Intent.ACTION_MAIN).setComponent(app.component), configuration, it) }
+                    created = true
+                    manager = request { endpoint.getManager(CarContext.APP_SERVICE, it) } as? IAppManager
+                        ?: error("App did not return an AndroidX IAppManager")
+                    navigation = request { endpoint.getManager(CarContext.NAVIGATION_SERVICE, it) } as? INavigationManager
+                        ?: error("App did not return an AndroidX INavigationManager")
+                    updateLifecycle()
+                }
+                for (ignored in invalidations) {
+                    if (!started || !visible) continue
+                    val result = request { checkNotNull(manager).getTemplate(it) }
+                    template = (result as? TemplateWrapper)?.template ?: error("App did not return a template")
+                    log("Car app template: ${template?.javaClass?.simpleName}")
+                }
             }
         }
         override fun onServiceDisconnected(name: ComponentName) { fail(IllegalStateException("App service disconnected; reopen the app")) }
@@ -116,8 +113,7 @@ class CarAppHost(
 
     private fun fromApp(block: () -> Unit) {
         enforceCaller()
-        if (closed) return
-        scope.launch { if (!closed) try { block() } catch (failure: Exception) { fail(failure) } }
+        launch { block() }
     }
 
     private val appHost = object : IAppHost.Stub() {
@@ -182,11 +178,7 @@ class CarAppHost(
         override fun startCarApp(intent: Intent) = fromApp {
             if ((intent.component?.packageName ?: intent.`package` ?: app.component.packageName) != app.component.packageName) {
                 notice = "Opening another app from a car app is not implemented"
-            } else scope.launch {
-                try { appCalls.withLock { request { checkNotNull(remote).onNewIntent(intent, it) } } }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { fail(failure) }
-            }
+            } else launch { appCalls.withLock { request { checkNotNull(remote).onNewIntent(intent, it) } } }
         }
     }
 
@@ -205,11 +197,7 @@ class CarAppHost(
         if (closed || visible == value) return
         visible = value
         if (!value) dismissAlert(AlertCallback.REASON_NOT_SUPPORTED)
-        scope.launch {
-            try { lifecycle.withLock { updateLifecycle() } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { fail(failure) }
-        }
+        launch { lifecycle.withLock { updateLifecycle() } }
     }
 
     private suspend fun updateLifecycle() {
@@ -227,11 +215,7 @@ class CarAppHost(
 
     fun back() {
         val endpoint = manager ?: return
-        scope.launch {
-            try { appCalls.withLock { request { endpoint.onBackPressed(it) } } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { fail(failure) }
-        }
+        launch { appCalls.withLock { request { endpoint.onBackPressed(it) } } }
     }
 
     fun click(action: Action) {
@@ -248,24 +232,16 @@ class CarAppHost(
     }
 
     fun event(call: (OnDoneCallback) -> Unit) {
-        if (closed) return
-        scope.launch {
-            try { appCalls.withLock { request { call(it.asDoneCallback()) } } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { fail(failure) }
-        }
+        launch { appCalls.withLock { request { call(it.asDoneCallback()) } } }
     }
 
     fun dismissNotice() { notice = null }
 
     fun stopNavigation() {
         val endpoint = navigation ?: return
-        scope.launch {
-            try {
-                appCalls.withLock { request { endpoint.onStopNavigation(it) } }
-                navigating = false
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { fail(failure) }
+        launch {
+            appCalls.withLock { request { endpoint.onStopNavigation(it) } }
+            navigating = false
         }
     }
 
@@ -321,9 +297,13 @@ class CarAppHost(
     }
 
     private fun surfaceCall(call: suspend () -> Unit) {
+        launch { surfaceCalls.withLock { call() } }
+    }
+
+    private fun launch(call: suspend () -> Unit) {
         if (closed) return
         scope.launch {
-            try { surfaceCalls.withLock { call() } }
+            try { if (!closed) call() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { fail(failure) }
         }

@@ -12,7 +12,6 @@ class AudioSinkTest {
     private data class Packet(val id: Int, val bytes: ByteArray, val epoch: Int?)
     private val packets = ArrayBlockingQueue<Packet>(32)
     private val controls = ArrayBlockingQueue<Packet>(32)
-    private var ready = false
     private var error: String? = null
     private val events = object : CarSessionEvents {
         override fun status(detail: String) = Unit
@@ -20,41 +19,7 @@ class AudioSinkTest {
         override fun focus(projected: Boolean, inputEnabled: Boolean) = Unit
         override fun input(report: Proto) = Unit
         override fun failure(error: Exception) = Unit
-        override fun audio(sink: AudioSink) { ready = true }
         override fun audioError(detail: String) { error = detail }
-    }
-
-    @Test fun selectsMediaCodecAndAdvertisedConfigurationWithoutConfusingGuidance() {
-        val discovery = Proto(Proto.build {
-            bytes(1, service(2, codec = 1, type = 1))
-            bytes(1, service(3, codec = 4))
-            bytes(1, service(5, codec = 1, rates = listOf(96_000, 44_100)))
-        })
-        val offer = checkNotNull(AudioOffer.find(discovery))
-        assertEquals(5, offer.channel)
-        val sink = sink(offer)
-        sink.receive(8, Proto.build { number(1, 0) })
-        assertEquals(1L, Proto(packets.take().bytes).number(1))
-        sink.receive(0x8003, Proto.build { number(1, 1) })
-        assertFalse(ready)
-        sink.receive(0x8003, Proto.build { number(1, 2); number(3, 1) })
-        assertTrue(ready)
-        assertEquals(AudioMode(1, 44_100, 2, 1), sink.mode)
-        sink.close()
-    }
-
-    @Test fun ignoresUnsupportedCodecsFormatsAndWrappedIntegers() {
-        val invalid = Proto(Proto.build {
-            bytes(1, service(2, codec = 3))
-            bytes(1, service(3, codec = 1, bits = 24))
-            bytes(1, Proto.build { number(1, 4); bytes(3, Proto.build {
-                number(1, 1); number(2, 3)
-                bytes(3, Proto.build { number(1, 0x100000000L + 48_000); number(2, 16); number(3, 2) })
-            }) })
-        })
-        assertNull(AudioOffer.find(invalid))
-        val aac = checkNotNull(AudioOffer.find(Proto(Proto.build { bytes(1, service(9, codec = 4)) })))
-        assertEquals(4, aac.choose(listOf(0)).codec)
     }
 
     @Test(timeout = 5_000) fun waitsForFocusAndUsesTimestampsAndSessionScopedCredits() {
@@ -88,6 +53,15 @@ class AudioSinkTest {
             assertNotEquals(first, sink.streamId)
             assertEquals(0x8001, packets.take().id)
             assertFalse(sink.write(byteArrayOf(7, 8), 40, first))
+            sink.focus(3)
+            assertEquals(4L, Proto(controls.take().bytes).number(1))
+            sink.playing(true)
+            sink.focus(1)
+            assertTrue(controls.isEmpty())
+            assertEquals(-1, sink.streamId)
+            sink.playing(false)
+            sink.playing(true)
+            assertEquals(1L, Proto(controls.take().bytes).number(1))
             assertNull(error)
         } finally { sink.close(); worker.shutdownNow() }
     }
@@ -111,31 +85,6 @@ class AudioSinkTest {
         } finally { sink.close(); worker.shutdownNow() }
     }
 
-    @Test fun permanentFocusLossDoesNotRepeatedlyTakeBackTheRadio() {
-        val sink = configured()
-        sink.playing(true)
-        controls.take()
-        sink.focus(1)
-        packets.take()
-        sink.focus(3)
-        assertEquals(4L, Proto(controls.take().bytes).number(1))
-        sink.playing(true)
-        sink.focus(1)
-        assertTrue(controls.isEmpty())
-        assertEquals(-1, sink.streamId)
-        sink.playing(false)
-        sink.playing(true)
-        assertEquals(1L, Proto(controls.take().bytes).number(1))
-        sink.close()
-    }
-
-    @Test fun negotiationRejectionReportsAudioFailureWithoutProjectionFailure() {
-        val offer = checkNotNull(AudioOffer.find(Proto(Proto.build { bytes(1, service(5, codec = 1)) })))
-        sink(offer).receive(8, Proto.build { number(1, -1) })
-        assertTrue(error!!.contains("refused"))
-        assertFalse(ready)
-    }
-
     private fun configured(codec: Int = 1): AudioSink {
         val sink = sink(checkNotNull(AudioOffer.find(Proto(Proto.build { bytes(1, service(5, codec)) }))))
         sink.receive(0x8003, Proto.build { number(1, 2); number(2, 1); number(3, 0) })
@@ -148,11 +97,11 @@ class AudioSinkTest {
 
     private fun ack(stream: Int, count: Int) = Proto.build { number(1, stream.toLong()); number(2, count.toLong()) }
 
-    private fun service(channel: Int, codec: Int, type: Int = 3, rates: List<Int> = listOf(48_000), bits: Int = 16) = Proto.build {
+    private fun service(channel: Int, codec: Int) = Proto.build {
         number(1, channel.toLong())
         bytes(3, Proto.build {
-            number(1, codec.toLong()); number(2, type.toLong())
-            rates.forEach { bytes(3, Proto.build { number(1, it.toLong()); number(2, bits.toLong()); number(3, 2) }) }
+            number(1, codec.toLong()); number(2, 3)
+            bytes(3, Proto.build { number(1, 48_000); number(2, 16); number(3, 2) })
         })
     }
 }

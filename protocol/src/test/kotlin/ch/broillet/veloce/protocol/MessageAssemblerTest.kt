@@ -16,18 +16,13 @@ class MessageAssemblerTest {
         assembler.endOfInput()
     }
 
-    @Test fun `aggregate reservation is bounded before allocation`() {
+    @Test fun `invalid fragments and aggregate reservations are rejected`() {
         val assembler = MessageAssembler(10)
         assembler.accept(frame(1, Fragment.FIRST, 8), byteArrayOf(1))
         assertThrows(IOException::class.java) { assembler.accept(frame(2, Fragment.FIRST, 8), byteArrayOf(2)) }
-    }
-
-    @Test fun `flags length and fragment ordering are checked`() {
         assertThrows(IOException::class.java) { MessageAssembler().accept(frame(1, Fragment.LAST), byteArrayOf(1)) }
-        val assembler = MessageAssembler()
-        assembler.accept(frame(1, Fragment.FIRST, 3), byteArrayOf(1))
         assertThrows(IOException::class.java) {
-            assembler.accept(Frame(1, Fragment.LAST, false, false, ByteArray(0)), byteArrayOf(2, 3))
+            assembler.accept(Frame(1, Fragment.LAST, false, false, ByteArray(0)), byteArrayOf(2))
         }
         val truncated = MessageAssembler()
         truncated.accept(frame(1, Fragment.FIRST, 3), byteArrayOf(1))

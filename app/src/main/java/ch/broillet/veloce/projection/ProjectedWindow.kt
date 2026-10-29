@@ -12,6 +12,7 @@ import android.view.WindowManager
 import android.view.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -163,7 +164,7 @@ class ProjectedWindow(
             registry.currentState = Lifecycle.State.CREATED
             checkNotNull(window).apply {
                 addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
-                setDecorFitsSystemWindows(false)
+                WindowCompat.setDecorFitsSystemWindows(this, false)
                 setBackgroundDrawableResource(android.R.color.black)
             }.decorView.apply {
                 setViewTreeLifecycleOwner(this@Window)

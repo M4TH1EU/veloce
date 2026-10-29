@@ -27,7 +27,6 @@ class Proto(bytes: ByteArray) {
     fun bytes(field: Int): ByteArray? = blobs[field]?.firstOrNull()
     fun messages(field: Int): List<Proto> = blobs[field].orEmpty().map(::Proto)
     fun text(field: Int): String = bytes(field)?.toString(Charsets.UTF_8).orEmpty()
-    fun has(field: Int): Boolean = numbers.containsKey(field) || blobs.containsKey(field)
     fun integers(field: Int): List<Int> = buildList {
         numbers[field]?.forEach { add(it.toInt()) }
         blobs[field]?.forEach { packed ->

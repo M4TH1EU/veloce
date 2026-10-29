@@ -142,8 +142,9 @@ internal class PlaybackCapture(
         if (!closed.compareAndSet(false, true)) return
         runCatching { sink.playing(false) }
         runCatching { record?.stop() }
-        projection?.unregisterCallback(callback)
+        runCatching { projection?.unregisterCallback(callback) }
         runCatching { projection?.stop() }
+        projection = null
         local.close()
     }
 }

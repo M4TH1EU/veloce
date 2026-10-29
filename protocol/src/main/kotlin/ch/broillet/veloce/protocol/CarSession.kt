@@ -335,6 +335,7 @@ internal class AckWindow(private val timeoutMs: Long = 8_000, private val stream
     private var inFlight = 0
     private var closed = false
     private var epoch = 0
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     private val lock = Object()
 
     fun acquire(expectedEpoch: Int): Boolean = synchronized(lock) {

@@ -31,6 +31,7 @@ class Connections(private val context: Context) {
     private val audioMode = MutableStateFlow(preferences.getBoolean("forward_audio", true))
     val forwardAudio = audioMode.asStateFlow()
     private val lines = ArrayDeque<String>()
+    private val logTime = DateTimeFormatter.ofPattern("HH:mm:ss")
 
     fun update(detail: String, active: Boolean, error: Boolean = false) {
         log(detail)
@@ -83,7 +84,7 @@ class Connections(private val context: Context) {
     @Synchronized fun log(message: String) {
         Log.i("Veloce", message)
         if (lines.size == 200) lines.removeFirst()
-        lines.addLast("${LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))} $message")
+        lines.addLast("${LocalTime.now().format(logTime)} $message")
     }
 
     @Synchronized fun diagnostics(): String = lines.joinToString("\n").ifBlank { "No connection attempts yet." }

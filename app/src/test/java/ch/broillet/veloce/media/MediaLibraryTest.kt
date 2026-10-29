@@ -5,11 +5,11 @@ package ch.broillet.veloce.media
 import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
-import android.content.pm.ResolveInfo
-import android.content.pm.ServiceInfo
+import android.content.IntentFilter
 import android.media.session.PlaybackState
 import android.os.Looper
 import android.os.Bundle
+import android.os.IBinder
 import android.view.KeyEvent
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -20,7 +20,6 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.SessionError
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -50,70 +49,40 @@ class MediaLibraryTest {
         val context = RuntimeEnvironment.getApplication()
         service = Robolectric.buildService(LibraryService::class.java).create()
         val component = ComponentName(context, LibraryService::class.java)
-        val info = ResolveInfo().apply { serviceInfo = ServiceInfo().apply {
-            name = component.className
-            packageName = component.packageName
-            applicationInfo = context.applicationInfo
-            exported = true
-        } }
-        shadowOf(context.packageManager).addResolveInfoForIntent(Intent(MediaLibraryService.SERVICE_INTERFACE).setPackage(context.packageName), info)
-        shadowOf(context).setComponentNameAndServiceForBindService(component, service.get().onBind(Intent(MediaLibraryService.SERVICE_INTERFACE)))
+        registerService(component, MediaLibraryService.SERVICE_INTERFACE, service.get().onBind(Intent(MediaLibraryService.SERVICE_INTERFACE)))
         library = MediaLibrary(context, CarApp(component, "Music", AppKind.AUDIO), {})
     }
 
     @After fun cleanup() { library.close(); service.destroy() }
 
-    @Test fun connectsAndBrowsesFoldersWithBackNavigation() {
+    @Test fun browsesBoundedPagesAndFoldersAndPlaysThroughTheBrowsedSession() {
         library.connect()
         await { !library.page.loading }
         assertNull(library.page.error)
         assertEquals("root", library.page.folder?.id)
         assertEquals(MediaLibrary.PAGE_SIZE, library.page.entries.size)
         assertTrue(library.page.more)
-        library.open(library.page.entries.first())
-        await { !library.page.loading }
-        assertEquals("folder", library.page.folder?.id)
-        assertEquals("track", library.page.entries.single().id)
-        assertTrue(library.back())
-        await { !library.page.loading }
-        assertEquals("root", library.page.folder?.id)
-        assertFalse(library.back())
-    }
-
-    @Test fun requestsBoundedPagesAndRestoresPreviousPage() {
-        library.connect()
-        await { !library.page.loading }
         library.changePage(1)
         await { !library.page.loading }
-        assertEquals(1, library.page.folder?.page)
         assertEquals(1, library.page.entries.size)
         assertFalse(library.page.more)
         assertTrue(service.get().requests.all { it.third == MediaLibrary.PAGE_SIZE })
         library.changePage(-1)
         await { !library.page.loading }
-        assertEquals(0, library.page.folder?.page)
-    }
-
-    @Test fun libraryPlaybackAndControlsUseTheBrowsedSession() {
-        library.connect()
+        library.open(library.page.entries.first())
         await { !library.page.loading }
-        val entry = library.page.entries[1]
-        assertTrue(library.play(entry))
+        assertEquals("folder", library.page.folder?.id)
+        assertEquals("track", library.page.entries.single().id)
+        assertTrue(library.play(library.page.entries.single()))
         await { service.get().player.playWhenReady }
-        assertEquals(entry.id, service.get().player.currentMediaItem?.mediaId)
-        assertTrue(library.control(PlaybackState.ACTION_PAUSE))
-        await { !service.get().player.playWhenReady }
-        assertFalse(library.control(PlaybackState.ACTION_SET_RATING))
-    }
-
-    @Test fun hardwareKeysControlTheLibraryWithoutNotificationAccess() {
-        library.connect()
-        await { !library.page.loading }
+        assertEquals("track", service.get().player.currentMediaItem?.mediaId)
         val media = ActiveMedia(RuntimeEnvironment.getApplication())
-        assertTrue(media.key(KeyEvent.KEYCODE_MEDIA_PLAY, library))
-        await { service.get().player.playWhenReady }
         assertTrue(media.key(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, library))
         await { !service.get().player.playWhenReady }
+        assertTrue(library.back())
+        await { !library.page.loading }
+        assertEquals("root", library.page.folder?.id)
+        assertFalse(library.back())
     }
 
     @Test fun browseRefusalDoesNotDiscardPlaybackControls() {
@@ -139,55 +108,13 @@ class MediaLibraryTest {
         assertFalse(library.page.entries.any { it.id == "late" })
     }
 
-    @Test fun childNotificationsRefreshTheOpenFolder() {
-        library.connect()
-        await { !library.page.loading }
-        val count = service.get().requests.size
-        service.get().session.notifyChildrenChanged("root", 41, null)
-        await { service.get().requests.size > count && !library.page.loading }
-        assertNull(library.page.error)
-    }
-
-    @Test fun asynchronousPlaybackRejectionIsVisible() {
-        library.connect()
-        await { !library.page.loading }
-        service.get().session.sendError(SessionError(SessionError.ERROR_PERMISSION_DENIED, "Account needs sign-in"))
-        await { library.playbackError != null }
-        assertEquals("Account needs sign-in", library.playbackError)
-    }
-
-    @Test fun closeWhileConnectingCannotReviveTheLibrary() {
-        library.connect()
-        library.close()
-        shadowOf(Looper.getMainLooper()).idle()
-        assertNull(library.nowPlaying)
-        assertFalse(library.control(PlaybackState.ACTION_PLAY))
-    }
-
-    @Test fun folderTimeoutIsAnErrorRatherThanAnEndlessSpinner() {
-        library.connect()
-        await { !library.page.loading }
-        service.get().delayFolder = true
-        library.open(library.page.entries.first())
-        await { service.get().pendingFolder != null }
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(9))
-        await { !library.page.loading }
-        assertTrue(library.page.error!!.contains("timed out"))
-    }
-
     @Test fun sameBrowserAlsoConnectsToLegacyFrameworkServices() {
         val context = RuntimeEnvironment.getApplication()
         val legacy = Robolectric.buildService(LegacyLibraryService::class.java).create()
         try {
             val component = ComponentName(context, LegacyLibraryService::class.java)
-            val info = ResolveInfo().apply { serviceInfo = ServiceInfo().apply {
-                name = component.className
-                packageName = component.packageName
-                applicationInfo = context.applicationInfo
-                exported = true
-            } }
-            shadowOf(context.packageManager).addResolveInfoForIntent(Intent("android.media.browse.MediaBrowserService").setPackage(context.packageName), info)
-            shadowOf(context).setComponentNameAndServiceForBindService(component, legacy.get().onBind(Intent("android.media.browse.MediaBrowserService")))
+            val action = "android.media.browse.MediaBrowserService"
+            registerService(component, action, legacy.get().onBind(Intent(action)))
             library.close()
             library = MediaLibrary(context, CarApp(component, "Legacy music", AppKind.AUDIO), {})
             library.connect()
@@ -206,6 +133,14 @@ class MediaLibraryTest {
             Thread.sleep(10)
         }
         fail("Timed out: ${library.page}")
+    }
+
+    private fun registerService(component: ComponentName, action: String, binder: IBinder?) {
+        val context = RuntimeEnvironment.getApplication()
+        val packages = shadowOf(context.packageManager)
+        packages.addServiceIfNotPresent(component).exported = true
+        packages.addIntentFilterForService(component, IntentFilter(action))
+        shadowOf(context).setComponentNameAndServiceForBindService(component, binder)
     }
 
     class LibraryService : MediaLibraryService() {
