@@ -19,50 +19,32 @@ Gradle uses JDK 25; application and protocol bytecode target Java 17.
 
 The APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 `:app:assembleRelease` builds an optimized APK, unsigned unless release signing
-is configured. See [signing](docs/SIGNING.md).
+is configured.
 
-## Connect
+### Create a stable release key
 
-1. Open Veloce and choose **Set up car certificate** with internet access available.
-   The public aasdk identity is checksum-verified and stored outside backups.
-2. **Car preview** opens the launcher on the phone at a selectable resolution/DPI.
-3. **USB:** connect to the car's Android Auto port and choose Veloce in Android's
-   accessory chooser. Clear another app's USB default if it owns the connection.
-4. **Wireless:** pair the phone with the car or wireless adapter in Android settings,
-   enable Bluetooth/Wi-Fi, then choose **Wireless** and accept the permission and
-   Wi-Fi prompts. If the car initiates startup, reconnect from its Bluetooth menu.
-5. Optionally enable **wireless auto-connect** for the selected device through
-   Android's companion-device setup. Audio sharing still requires authorization.
+Run these :
+```sh
+keytool -genkeypair -keystore "<path-to-store-key>/veloce.jks" -storetype JKS -alias veloce -keyalg RSA -keysize 4096 -validity 10000
+chmod 600 "<path-to-store-key>/veloce.jks
+```
 
-**Car** returns to the head unit's native interface. **Disconnect** ends the session.
-For troubleshooting, use **Share connection log** and include phone/OS, head-unit,
-adapter, and app versions. Logs are local until shared; review them before posting.
+Put these properties in **`~/.gradle/gradle.properties`** :
 
-## Apps and audio
-
-- Compatible AndroidX car apps render their templates and map surfaces in Veloce.
-  Home/music switching retains the current navigation session.
-- Media apps provide folders and playback controls through Media3 or legacy browser
-  services. If browsing is refused, grant notification access, start playback on the
-  phone, and use **Now playing**.
-- Search, artwork, rewind/forward, playback speed and app-provided custom actions
-  are available when the media app exposes them.
-- **Audio through Veloce** forwards eligible playback over USB or Wi-Fi after Android
-  consent. Turn it off while disconnected to use Android's normal Bluetooth output.
-- Optional notification access also enables an in-memory inbox and text banners.
-  It does not grant library or audio-capture access. **Hide** only affects Veloce.
-
-See [app compatibility](docs/APP_COMPATIBILITY.md) and [audio setup](docs/AUDIO.md).
+```properties
+veloce.storeFile=<absolute-path-to-store-key>/veloce.jks
+veloce.storePassword=YOUR_STORE_PASSWORD
+veloce.keyAlias=veloce
+veloce.keyPassword=YOUR_KEY_PASSWORD
+```
 
 ## Limitations
 
 The car-app host supports common list, grid, pane, message, search, tab, and navigation
 templates up to Car App API 7, with fixed night mode. Microphone/assistant input,
 car telemetry, cluster forwarding, notification replies, and read-aloud are absent.
-Hardware requests receive explicit unsupported results, not fabricated sensor data.
-Parked-only actions have no vehicle-status gate; configure and interact while parked.
-Navigation speech and calls are separate from playback capture. Projection remains
-subject to Android's lock-screen and power policies.
+Hardware requests receive explicit unsupported results.
+Navigation speech and calls are separate from playback capture.
 
 ## Project
 

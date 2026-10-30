@@ -36,6 +36,11 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
+        debug {
+            signingConfigs.findByName("veloceRelease")?.let {
+                signingConfig = it
+            }
+        }
     }
 
     compileOptions {
