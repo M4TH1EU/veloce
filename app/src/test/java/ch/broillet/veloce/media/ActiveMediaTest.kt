@@ -5,6 +5,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.Bundle
 import android.view.KeyEvent
 import org.junit.Assert.*
 import org.junit.Test
@@ -41,6 +42,28 @@ class ActiveMediaTest {
             assertTrue(media.key(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
             assertEquals(PlaybackState.ACTION_PLAY, controls.lastPerformedAction)
             assertFalse(media.key(KeyEvent.KEYCODE_ASSIST))
+        } finally { media.disconnect(); session.release() }
+    }
+
+    @Test fun customActionsUseOnlyTheSelectedSessionsAdvertisedCommandsAndExtras() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = MediaSession(context, "audiobook")
+        val controller = MediaController(context, session.sessionToken)
+        val media = ActiveMedia(context)
+        val extras = Bundle().apply { putLong("amount", 30_000) }
+        try {
+            shadowOf(controller).setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1.5f)
+                .addCustomAction(PlaybackState.CustomAction.Builder("jump", "Jump", 1).setExtras(extras).build()).build())
+            shadowOf(context.getSystemService(MediaSessionManager::class.java)).addController(controller)
+            media.connect()
+            assertEquals(listOf(MediaAction("jump", "Jump")), media.nowPlaying.value!!.customActions)
+            assertEquals(1.5f, media.nowPlaying.value!!.speed)
+            assertFalse(media.customAction("unknown", null))
+            assertTrue(media.customAction("jump", null))
+            assertEquals("jump", shadowOf(controller.transportControls).customAction)
+            assertEquals(30_000L, shadowOf(controller.transportControls).customActionArgs!!.getLong("amount"))
+            assertFalse(media.setSpeed(Float.NaN, null))
+            assertFalse(media.setSpeed(1.5f, null))
         } finally { media.disconnect(); session.release() }
     }
 }

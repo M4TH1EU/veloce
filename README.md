@@ -18,8 +18,8 @@ Gradle uses JDK 25; application and protocol bytecode target Java 17.
 ```
 
 The APK is at `app/build/outputs/apk/debug/app-debug.apk`.
-`:app:assembleRelease` builds an optimized, unsigned APK; sign it with your own key
-before distribution. Keep the same signing key for subsequent updates.
+`:app:assembleRelease` builds an optimized APK, unsigned unless release signing
+is configured. See [signing](docs/SIGNING.md).
 
 ## Connect
 
@@ -45,6 +45,8 @@ adapter, and app versions. Logs are local until shared; review them before posti
 - Media apps provide folders and playback controls through Media3 or legacy browser
   services. If browsing is refused, grant notification access, start playback on the
   phone, and use **Now playing**.
+- Search, artwork, rewind/forward, playback speed and app-provided custom actions
+  are available when the media app exposes them.
 - **Audio through Veloce** forwards eligible playback over USB or Wi-Fi after Android
   consent. Turn it off while disconnected to use Android's normal Bluetooth output.
 - Optional notification access also enables an in-memory inbox and text banners.
@@ -56,7 +58,8 @@ See [app compatibility](docs/APP_COMPATIBILITY.md) and [audio setup](docs/AUDIO.
 
 The car-app host supports common list, grid, pane, message, search, tab, and navigation
 templates up to Car App API 7, with fixed night mode. Microphone/assistant input,
-car hardware APIs, cluster forwarding, notification replies, and read-aloud are absent.
+car telemetry, cluster forwarding, notification replies, and read-aloud are absent.
+Hardware requests receive explicit unsupported results, not fabricated sensor data.
 Parked-only actions have no vehicle-status gate; configure and interact while parked.
 Navigation speech and calls are separate from playback capture. Projection remains
 subject to Android's lock-screen and power policies.

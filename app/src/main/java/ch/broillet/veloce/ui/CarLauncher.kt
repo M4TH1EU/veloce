@@ -114,8 +114,10 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation,
                 }
                 when {
                     navigation.notificationsOpen -> CarNotificationsContent(notifications, Modifier.fillMaxWidth().weight(1f))
-                    navigation.player -> MediaPlayer(playerTrack, control, Modifier.fillMaxWidth().weight(1f),
-                        if (selected?.kind == AppKind.AUDIO || libraryPlayer != null) library?.playbackError else null)
+                     navigation.player -> MediaPlayer(playerTrack, control, Modifier.fillMaxWidth().weight(1f),
+                         if (selected?.kind == AppKind.AUDIO || libraryPlayer != null) library?.playbackError else null,
+                         customAction = { libraryPlayer?.customAction(it) ?: media.customAction(it, playerTrack?.packageName) },
+                         setSpeed = { libraryPlayer?.setSpeed(it) ?: media.setSpeed(it, playerTrack?.packageName) })
                     selected?.kind == AppKind.AUDIO && library != null -> MediaLibraryContent(library, { navigation.player = true }, Modifier.fillMaxWidth().weight(1f))
                     selected != null && host != null -> key(host) { CarAppContent(host, navigation::home, Modifier.fillMaxWidth().weight(1f)) }
                     apps.isEmpty() -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_apps)) }

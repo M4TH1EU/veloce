@@ -13,6 +13,8 @@ import android.os.Binder
 import android.os.IBinder
 import androidx.car.app.*
 import androidx.car.app.constraints.IConstraintHost
+import androidx.car.app.hardware.ICarHardwareHost
+import androidx.car.app.hardware.ICarHardwareResult
 import androidx.car.app.model.*
 import androidx.car.app.navigation.INavigationHost
 import androidx.car.app.navigation.INavigationManager
@@ -22,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import ch.broillet.veloce.apps.CarApp
+import ch.broillet.veloce.apps.AppKind
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
@@ -87,7 +90,7 @@ class CarAppHost(
                     created = true
                     manager = request { endpoint.getManager(CarContext.APP_SERVICE, it) } as? IAppManager
                         ?: error("App did not return an AndroidX IAppManager")
-                    navigation = request { endpoint.getManager(CarContext.NAVIGATION_SERVICE, it) } as? INavigationManager
+                    if (app.kind == AppKind.MAP) navigation = request { endpoint.getManager(CarContext.NAVIGATION_SERVICE, it) } as? INavigationManager
                         ?: error("App did not return an AndroidX INavigationManager")
                     updateLifecycle()
                 }
@@ -163,6 +166,15 @@ class CarAppHost(
         }
         override fun isAppDrivenRefreshEnabled(): Boolean { enforceCaller(); return true }
     }
+    private fun unsupportedHardware(type: Int, callback: ICarHardwareResult) {
+        enforceCaller()
+        launch { request { callback.onCarHardwareResult(type, false, Bundleable.create("unsupported"), it.asBinder()) } }
+    }
+    private val hardware = object : ICarHardwareHost.Stub() {
+        override fun getCarHardwareResult(type: Int, parameters: Bundleable?, callback: ICarHardwareResult) = unsupportedHardware(type, callback)
+        override fun subscribeCarHardwareResult(type: Int, parameters: Bundleable?, callback: ICarHardwareResult) = unsupportedHardware(type, callback)
+        override fun unsubscribeCarHardwareResult(type: Int, parameters: Bundleable?) { enforceCaller() }
+    }
     private val carHost = object : ICarHost.Stub() {
         override fun getHost(type: String): IBinder? {
             enforceCaller()
@@ -171,6 +183,7 @@ class CarAppHost(
                 CarContext.APP_SERVICE -> appHost
                 CarContext.NAVIGATION_SERVICE -> navigationHost
                 CarContext.CONSTRAINT_SERVICE -> constraints
+                CarContext.HARDWARE_SERVICE -> hardware
                 else -> null
             }
         }
@@ -198,6 +211,16 @@ class CarAppHost(
         visible = value
         if (!value) dismissAlert(AlertCallback.REASON_NOT_SUPPORTED)
         launch { lifecycle.withLock { updateLifecycle() } }
+    }
+
+    fun updateConfiguration(value: Configuration) {
+        if (closed) return
+        val updated = Configuration(value).apply {
+            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_YES
+        }
+        if (configuration == updated) return
+        configuration.setTo(updated)
+        launch { lifecycle.withLock { if (created) request { checkNotNull(remote).onConfigurationChanged(updated, it) } } }
     }
 
     private suspend fun updateLifecycle() {

@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,6 +34,8 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifier) {
+    val configuration = android.content.res.Configuration(LocalConfiguration.current)
+    LaunchedEffect(host, configuration) { host.updateConfiguration(configuration) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         host.notice?.let { message ->
             Surface(color = MaterialTheme.colorScheme.secondaryContainer) {

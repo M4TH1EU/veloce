@@ -26,6 +26,7 @@ coroutines-guava = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-guava", 
 junit = { module = "junit:junit", version.ref = "junit" }
 protobuf = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
 car-app = { module = "androidx.car.app:app", version.ref = "car-app" }
+car-projected = { module = "androidx.car.app:app-projected", version.ref = "car-app" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 

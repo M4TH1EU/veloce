@@ -38,6 +38,10 @@
     <string name="next">Next</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
+    <string name="rewind">Rewind</string>
+    <string name="fast_forward">Forward</string>
+    <string name="search">Search</string>
+    <string name="playback_speed">Speed: %1$.2f×</string>
     <string name="no_apps">No car apps found. Install an app with an Android Auto interface.</string>
     <string name="resume_navigation">Return to %1$s</string>
     <string name="stop_navigation">Stop route</string>

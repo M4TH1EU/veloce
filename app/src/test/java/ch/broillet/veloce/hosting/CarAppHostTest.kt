@@ -21,6 +21,9 @@ import androidx.car.app.navigation.INavigationManager
 import androidx.car.app.navigation.INavigationHost
 import androidx.car.app.serialization.Bundleable
 import androidx.car.app.serialization.Bundler
+import androidx.car.app.hardware.common.CarHardwareHostDispatcher
+import androidx.car.app.hardware.info.Model
+import androidx.car.app.hardware.info.ProjectedCarInfo
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
 import ch.broillet.veloce.ui.CarNavigation
@@ -151,6 +154,35 @@ class CarAppHostTest {
         assertEquals("scroll:12.0,5.0", received[3])
     }
 
+    @Test fun nonNavigationAppsDoNotNeedANavigationManagerAndHardwareReportsUnsupported() {
+        val context = RuntimeEnvironment.getApplication()
+        host.close()
+        host = CarAppHost(context, host.app.copy(kind = AppKind.OTHER), {}, logs::add)
+        host.connect()
+        await { host.template != null }
+        assertFalse("manager:navigation" in endpoint.calls)
+        val dispatcher = HostDispatcher().apply { setCarHost(endpoint.carHost) }
+        val info = ProjectedCarInfo(CarHardwareHostDispatcher(dispatcher))
+        var model: Model? = null
+        info.fetchModel({ it.run() }) { model = it }
+        await { model != null || host.error != null }
+        assertNull(host.error)
+        assertNull(model!!.manufacturer.value)
+    }
+
+    @Test fun configurationChangesReachTheSameSessionAndDoNotRecreateIt() {
+        host.connect()
+        await { host.template != null }
+        val changed = Configuration(endpoint.configuration).apply { screenWidthDp = 800 }
+        host.updateConfiguration(changed)
+        await { "configuration" in endpoint.calls }
+        assertEquals(800, endpoint.configuration.screenWidthDp)
+        host.updateConfiguration(changed)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, endpoint.calls.count { it == "configuration" })
+        assertEquals(1, endpoint.calls.count { it == "create" })
+    }
+
     private fun await(condition: () -> Boolean) {
         repeat(500) {
             shadowOf(Looper.getMainLooper()).idle()
@@ -221,6 +253,10 @@ class CarAppHostTest {
         override fun onAppPause(callback: IOnDoneCallback) { calls.add("pause"); callback.onSuccess(null) }
         override fun onAppStop(callback: IOnDoneCallback) { calls.add("stop"); callback.onSuccess(null) }
         override fun onNewIntent(intent: Intent, callback: IOnDoneCallback) = callback.onSuccess(null)
-        override fun onConfigurationChanged(configuration: Configuration, callback: IOnDoneCallback) = callback.onSuccess(null)
+        override fun onConfigurationChanged(configuration: Configuration, callback: IOnDoneCallback) {
+            this.configuration = configuration
+            calls.add("configuration")
+            callback.onSuccess(null)
+        }
     }
 }

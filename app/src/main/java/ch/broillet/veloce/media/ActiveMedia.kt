@@ -8,11 +8,17 @@ import android.media.AudioManager
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+data class MediaArtwork(val uri: Uri? = null, val data: ByteArray? = null, val bitmap: Bitmap? = null)
+data class MediaAction(val id: String, val label: String)
 
 data class NowPlaying(
     val packageName: String,
@@ -20,6 +26,9 @@ data class NowPlaying(
     val artist: String?,
     val playing: Boolean,
     val actions: Long,
+    val artwork: MediaArtwork? = null,
+    val customActions: List<MediaAction> = emptyList(),
+    val speed: Float = 1f,
 )
 
 class ActiveMedia(context: Context) {
@@ -93,17 +102,43 @@ class ActiveMedia(context: Context) {
                 metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
                 it.playbackState?.state == PlaybackState.STATE_PLAYING,
                 it.playbackState?.actions ?: 0,
+                metadata?.let { data -> MediaArtwork(
+                    uri = (data.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+                        ?: data.getString(MediaMetadata.METADATA_KEY_ART_URI)
+                        ?: data.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))?.let(Uri::parse),
+                    bitmap = data.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+                        ?: data.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                        ?: data.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)) },
+                it.playbackState?.customActions.orEmpty().take(12).map { action -> MediaAction(action.action, action.name.toString()) },
+                it.playbackState?.playbackSpeed?.takeIf { speed -> speed > 0 } ?: 1f,
             )
         }
         allTracks.value = snapshots
         current.value = snapshots.getOrNull(controllers.indexOf(active))
     }
 
-    fun control(action: Long, packageName: String? = null): Boolean {
-        val controller = if (packageName == null) selected else
+    private fun controller(packageName: String?): MediaController? = if (packageName == null) selected else
             controllers.firstOrNull { it.packageName == packageName && it.playbackState?.state == PlaybackState.STATE_PLAYING }
                 ?: controllers.firstOrNull { it.packageName == packageName }
-        controller ?: return false
+
+    fun customAction(id: String, packageName: String?): Boolean {
+        val controller = controller(packageName) ?: return false
+        val action = controller.playbackState?.customActions?.firstOrNull { it.action == id } ?: return false
+        return try {
+            controller.transportControls.sendCustomAction(action.action, action.extras ?: Bundle.EMPTY)
+            true
+        } catch (_: SecurityException) { refresh(); false }
+    }
+
+    fun setSpeed(speed: Float, packageName: String?): Boolean {
+        val controller = controller(packageName) ?: return false
+        if (!speed.isFinite() || speed !in .25f..3f || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SET_PLAYBACK_SPEED == 0L) return false
+        return try { controller.transportControls.setPlaybackSpeed(speed); true }
+        catch (_: SecurityException) { refresh(); false }
+    }
+
+    fun control(action: Long, packageName: String? = null): Boolean {
+        val controller = controller(packageName) ?: return false
         val actions = controller.playbackState?.actions ?: 0
         val command = if (action == PlaybackState.ACTION_PLAY_PAUSE) {
             val next = if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
@@ -121,6 +156,8 @@ class ActiveMedia(context: Context) {
                 }
                 PlaybackState.ACTION_SKIP_TO_PREVIOUS -> controller.transportControls.skipToPrevious()
                 PlaybackState.ACTION_SKIP_TO_NEXT -> controller.transportControls.skipToNext()
+                PlaybackState.ACTION_REWIND -> controller.transportControls.rewind()
+                PlaybackState.ACTION_FAST_FORWARD -> controller.transportControls.fastForward()
                 else -> return false
             }
             true
@@ -137,6 +174,8 @@ class ActiveMedia(context: Context) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> PlaybackState.ACTION_PLAY_PAUSE
             KeyEvent.KEYCODE_MEDIA_NEXT -> PlaybackState.ACTION_SKIP_TO_NEXT
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> PlaybackState.ACTION_SKIP_TO_PREVIOUS
+            KeyEvent.KEYCODE_MEDIA_REWIND -> PlaybackState.ACTION_REWIND
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> PlaybackState.ACTION_FAST_FORWARD
             else -> return false
         }
         val active = nowPlaying.value

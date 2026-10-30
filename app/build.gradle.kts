@@ -18,8 +18,20 @@ android {
     buildFeatures { compose = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
 
+    signingConfigs {
+        providers.gradleProperty("veloce.storeFile").orNull?.let { path ->
+            create("veloceRelease") {
+                storeFile = file(path)
+                storePassword = providers.gradleProperty("veloce.storePassword").get()
+                keyAlias = providers.gradleProperty("veloce.keyAlias").get()
+                keyPassword = providers.gradleProperty("veloce.keyPassword").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("veloceRelease")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
@@ -40,6 +52,7 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
     implementation(libs.car.app)
+    implementation(libs.car.projected)
     implementation(libs.lifecycle.compose)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.coroutines.android)
