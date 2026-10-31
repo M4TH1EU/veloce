@@ -1,6 +1,7 @@
 package ch.broillet.veloce.ui
 
 import android.graphics.SurfaceTexture
+import android.graphics.Matrix
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
@@ -94,7 +95,17 @@ private fun PreviewSurface(model: HomeModel, spec: ScreenSpec, modifier: Modifie
                         }
                     }
                     override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
-                        texture.setDefaultBufferSize(spec.width, spec.height)
+                        restore()
+                    }
+                    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+                        super.onWindowFocusChanged(hasWindowFocus)
+                        if (hasWindowFocus) post { restore() }
+                    }
+                    private fun restore() {
+                        surfaceTexture?.setDefaultBufferSize(spec.width, spec.height)
+                        setTransform(Matrix())
+                        projected?.restoreGeometry()
+                        invalidate()
                     }
                     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
                     override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean { release(); return true }

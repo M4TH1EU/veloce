@@ -16,6 +16,12 @@ import android.os.Parcel
 import android.view.Surface
 import androidx.car.app.*
 import androidx.car.app.model.MessageTemplate
+import androidx.car.app.model.Action
+import androidx.car.app.model.Template
+import androidx.car.app.model.ItemList
+import androidx.car.app.model.ListTemplate
+import androidx.car.app.model.Row
+import androidx.car.app.model.Toggle
 import androidx.car.app.model.TemplateWrapper
 import androidx.car.app.navigation.INavigationManager
 import androidx.car.app.navigation.INavigationHost
@@ -98,6 +104,37 @@ class CarAppHostTest {
         assertTrue(logs.any { "Unknown host" in it })
     }
 
+    @Test fun nativeBackActionsCanUnwindMultipleHostedScreens() {
+        host.connect()
+        await { host.template != null }
+        host.click(Action.BACK)
+        await { endpoint.calls.count { it == "back" } == 1 }
+        host.click(Action.BACK)
+        await { endpoint.calls.count { it == "back" } == 2 }
+        assertNull(host.error)
+    }
+
+    @Test fun refreshedTemplatesReplaceCallbacksEvenWhenTheirVisualModelsCompareEqual() {
+        var first = 0
+        var second = 0
+        fun options(change: (Boolean) -> Unit): Template = ListTemplate.Builder().setTitle("Route options")
+            .setSingleList(ItemList.Builder().addItem(Row.Builder().setTitle("Avoid highways")
+                .setToggle(Toggle.Builder { change(it) }.build()).build()).build()).build()
+        endpoint.template = options { first++ }
+        host.connect()
+        await { host.template != null }
+        val original = host.template!!
+        endpoint.template = options { second++ }
+        assertEquals(original, endpoint.template)
+        val appHost = IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE))
+        appHost.invalidate()
+        await { host.template !== original }
+        val toggle = ((host.template as ListTemplate).singleList!!.items.first() as Row).toggle!!
+        host.event { toggle.onCheckedChangeDelegate.sendCheckedChange(true, it) }
+        await { second == 1 }
+        assertEquals(0, first)
+    }
+
     @Test fun homeAndMusicRetainTheSameNavigationSession() {
         val navigation = CarNavigation()
         val workspace = CarWorkspace(RuntimeEnvironment.getApplication(), navigation, logs::add)
@@ -149,6 +186,12 @@ class CarAppHostTest {
         assertEquals(listOf("available:640x360@160", "visible:640x360", "stable:640x360"), received.toList())
         host.gesture { it.onScroll(12f, 5f) }
         await { received.size == 4 }
+        host.surfaceArea(Rect(100, 80, 560, 280), Rect(80, 40, 560, 320))
+        await { received.size == 6 }
+        assertEquals(listOf("visible:460x200", "stable:480x280"), received.toList().takeLast(2))
+        host.surfaceArea(Rect(100, 80, 560, 280), Rect(80, 40, 560, 300))
+        await { received.size == 8 }
+        assertEquals("stable:480x260", received.last())
         host.surfaceDestroyed(target)
         await { "destroyed" in received }
         assertEquals("scroll:12.0,5.0", received[3])
@@ -198,10 +241,11 @@ class CarAppHostTest {
         val managerResponses = mutableListOf<Any>()
         lateinit var carHost: ICarHost
         lateinit var configuration: Configuration
+        var template: Template = MessageTemplate.Builder("Map ready").build()
         private val appManager = object : IAppManager.Stub() {
             override fun getTemplate(callback: IOnDoneCallback) {
                 calls.add("template")
-                callback.onSuccess(Bundleable.create(TemplateWrapper.wrap(MessageTemplate.Builder("Map ready").build())))
+                callback.onSuccess(Bundleable.create(TemplateWrapper.wrap(template)))
             }
             override fun onBackPressed(callback: IOnDoneCallback) { calls.add("back"); callback.onSuccess(null) }
             override fun startLocationUpdates(callback: IOnDoneCallback) = callback.onSuccess(null)

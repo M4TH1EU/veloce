@@ -11,6 +11,8 @@ protobuf = "4.36.2"
 car-app = "1.7.0"
 robolectric = "4.17"
 media3 = "1.11.1"
+palette = "1.0.0"
+yaml = "2.9"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose" }
@@ -29,6 +31,8 @@ car-app = { module = "androidx.car.app:app", version.ref = "car-app" }
 car-projected = { module = "androidx.car.app:app-projected", version.ref = "car-app" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
+palette = { module = "androidx.palette:palette", version.ref = "palette" }
+yaml = { module = "org.snakeyaml:snakeyaml-engine", version.ref = "yaml" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

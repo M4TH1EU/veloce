@@ -64,12 +64,21 @@ class ProjectedWindow(
             presentation.content = view
             presentation.setContentView(view)
             presentation.show()
-            presentation.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-            presentation.window?.insetsController?.hide(WindowInsets.Type.systemBars())
+            restoreGeometry()
             presentation.resume()
         } catch (error: Exception) {
             close()
             throw error
+        }
+    }
+
+    fun restoreGeometry() {
+        if (closed) return
+        display.resize(spec.width, spec.height, spec.density)
+        presentation.window?.apply {
+            setLayout(spec.width, spec.height)
+            insetsController?.hide(WindowInsets.Type.systemBars())
+            decorView.requestLayout()
         }
     }
 

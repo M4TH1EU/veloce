@@ -66,4 +66,26 @@
     <string name="no_notifications">No notifications</string>
     <string name="notification_access_needed">Enable notification access in Veloce on your phone. If access was already enabled, check that conversations, alerting and silent notifications are allowed in Android’s notification access settings.</string>
     <string name="hide_notification">Hide</string>
+    <string name="your_apps">Your apps</string>
+    <string name="navigation">Navigation</string>
+    <string name="no_navigation_apps">Install a compatible navigation app to see it here.</string>
+    <string name="media_library">Library</string>
+    <string name="all_caught_up">All caught up</string>
+    <string name="notifications_empty_detail">New notifications will appear here.</string>
+    <string name="playback_speed_title">Playback speed</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="playback_position">Playback position</string>
+    <string name="previous_page">Previous browse page</string>
+    <string name="next_page">Next browse page</string>
+    <string name="previous_track">Previous track</string>
+    <string name="next_track">Next track</string>
+    <string name="lyrics">Lyrics</string>
+    <string name="close_lyrics">Close lyrics</string>
+    <string name="finding_lyrics">Finding lyrics…</string>
+    <string name="no_lyrics">No lyrics found for this track</string>
+    <string name="instrumental">Instrumental</string>
+    <string name="follow_lyrics">Follow lyrics</string>
+    <string name="word_synced">Word synced</string>
+    <string name="line_synced">Synced</string>
+    <string name="plain_lyrics">Unsynced</string>
 </resources>

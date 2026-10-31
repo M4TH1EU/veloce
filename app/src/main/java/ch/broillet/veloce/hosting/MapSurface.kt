@@ -2,21 +2,70 @@ package ch.broillet.veloce.hosting
 
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.Surface
 import android.view.TextureView
 import androidx.car.app.SurfaceContainer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
-internal fun MapSurface(host: CarAppHost, modifier: Modifier) {
+internal fun MapSurface(host: CarAppHost, modifier: Modifier, visibleInsets: PaddingValues = PaddingValues(0.dp),
+    stableInsets: PaddingValues = visibleInsets, onPanStart: () -> Unit = {}, onPanEnd: () -> Unit = {},
+    blurred: Boolean = false, interactive: Boolean = true) {
+    val direction = LocalLayoutDirection.current
+    val insets = with(LocalDensity.current) {
+        Rect(visibleInsets.calculateLeftPadding(direction).roundToPx(), visibleInsets.calculateTopPadding().roundToPx(),
+            visibleInsets.calculateRightPadding(direction).roundToPx(), visibleInsets.calculateBottomPadding().roundToPx())
+    }
+    val stable = with(LocalDensity.current) {
+        Rect(stableInsets.calculateLeftPadding(direction).roundToPx(), stableInsets.calculateTopPadding().roundToPx(),
+            stableInsets.calculateRightPadding(direction).roundToPx(), stableInsets.calculateBottomPadding().roundToPx())
+    }
+    val beginPan by androidx.compose.runtime.rememberUpdatedState(onPanStart)
+    val endPan by androidx.compose.runtime.rememberUpdatedState(onPanEnd)
+    val blurRadius = with(LocalDensity.current) { 28.dp.toPx() }
     AndroidView(modifier = modifier, factory = { context ->
         object : TextureView(context), TextureView.SurfaceTextureListener {
             private var target: SurfaceContainer? = null
+            private var contentInsets = Rect()
+            private var stableContentInsets = Rect()
+            private var dragging = false
+            private var blurred = false
+            private var interactive = true
+            fun presentation(blur: Boolean, touch: Boolean) {
+                this.interactive = touch
+                if (this.blurred != blur) {
+                    this.blurred = blur
+                    setRenderEffect(if (blur) RenderEffect.createBlurEffect(blurRadius, blurRadius, Shader.TileMode.CLAMP) else null)
+                }
+            }
+            fun updateInsets(insets: Rect, stable: Rect) {
+                if (contentInsets == insets && stableContentInsets == stable) return
+                contentInsets = Rect(insets)
+                stableContentInsets = Rect(stable)
+                publishArea(width, height)
+            }
+            private fun publishArea(width: Int, height: Int) {
+                if (width <= 0 || height <= 0) return
+                fun area(insets: Rect): Rect {
+                    val left = insets.left.coerceIn(0, width - 1)
+                    val top = insets.top.coerceIn(0, height - 1)
+                    return Rect(left, top, (width - insets.right).coerceIn(left + 1, width),
+                        (height - insets.bottom).coerceIn(top + 1, height))
+                }
+                host.surfaceArea(area(contentInsets), area(stableContentInsets))
+            }
             private val scale = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 override fun onScale(detector: ScaleGestureDetector): Boolean {
                     val x = detector.focusX
@@ -35,7 +84,10 @@ internal fun MapSurface(host: CarAppHost, modifier: Modifier) {
                     return true
                 }
                 override fun onScroll(first: MotionEvent?, last: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
-                    if (!scale.isInProgress && last.pointerCount == 1) host.gesture { it.onScroll(distanceX, distanceY) }
+                    if (!scale.isInProgress && last.pointerCount == 1) {
+                        if (!dragging) { dragging = true; beginPan() }
+                        host.gesture { it.onScroll(distanceX, distanceY) }
+                    }
                     return true
                 }
                 override fun onFling(first: MotionEvent?, last: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
@@ -46,9 +98,14 @@ internal fun MapSurface(host: CarAppHost, modifier: Modifier) {
             init {
                 surfaceTextureListener = this
                 setOnTouchListener { view, event ->
+                    if (!this.interactive) return@setOnTouchListener false
                     scale.onTouchEvent(event)
                     gestures.onTouchEvent(event)
                     if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
+                    if (dragging && (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)) {
+                        dragging = false
+                        endPan()
+                    }
                     true
                 }
             }
@@ -61,12 +118,12 @@ internal fun MapSurface(host: CarAppHost, modifier: Modifier) {
             }
             private fun publish(texture: SurfaceTexture, width: Int, height: Int) {
                 texture.setDefaultBufferSize(width, height)
-                host.surfaceArea(Rect(0, 0, width, height))
+                publishArea(width, height)
                 target = SurfaceContainer(Surface(texture), width, height, resources.displayMetrics.densityDpi).also(host::surfaceAvailable)
             }
             override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
             override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean { release(); return true }
             fun release() { target?.let(host::surfaceDestroyed); target = null }
         }
-    }, onRelease = { it.release() })
+    }, update = { it.updateInsets(insets, stable); it.presentation(blurred, interactive) }, onRelease = { it.release() })
 }

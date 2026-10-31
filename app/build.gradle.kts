@@ -63,6 +63,8 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.guava)
     implementation(libs.media3.session)
+    implementation(libs.palette)
+    implementation(libs.yaml)
     debugImplementation(libs.compose.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

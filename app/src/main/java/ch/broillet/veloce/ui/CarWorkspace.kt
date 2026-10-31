@@ -44,6 +44,7 @@ class CarWorkspace(
         navigation.selected = app
         navigation.player = false
         navigation.notificationsOpen = false
+        navigation.lyrics = false
         updateVisibility()
     }
 

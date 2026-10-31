@@ -1,0 +1,41 @@
+@file:Suppress("DEPRECATION", "RestrictedApi")
+
+package ch.broillet.veloce.hosting
+
+import android.app.Application
+import androidx.car.app.model.Action
+import androidx.car.app.model.ActionStrip
+import androidx.car.app.model.Pane
+import androidx.car.app.model.PaneTemplate
+import androidx.car.app.model.Row
+import androidx.car.app.model.ItemList
+import androidx.car.app.model.ListTemplate
+import androidx.car.app.navigation.model.MapWithContentTemplate
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], application = Application::class)
+class TemplateActionsTest {
+    @Test fun embeddedMapSubmenusKeepTheirNativeBackActionAndPageTitle() {
+        val page = ListTemplate.Builder().setTitle("Route options").setHeaderAction(Action.BACK)
+            .setSingleList(ItemList.Builder().addItem(Row.Builder().setTitle("Avoid tolls").build()).build()).build()
+        val map = MapWithContentTemplate.Builder().setContentTemplate(page).build()
+        assertEquals(Action.TYPE_BACK, map.pageHeader()!!.startHeaderAction!!.type)
+        assertEquals("Route options", map.pageTitle())
+    }
+
+    @Test fun legacyActionStripIsNotRenderedAgainWhenExposedByTheModernHeader() {
+        val close = Action.Builder().setTitle("Close").setOnClickListener {}.build()
+        val strip = ActionStrip.Builder().addAction(close).build()
+        val pane = Pane.Builder().addRow(Row.Builder().setTitle("Destination").build()).build()
+        val template = PaneTemplate.Builder(pane).setTitle("Start now").setActionStrip(strip).build()
+        assertEquals(listOf(close), template.header!!.endHeaderActions)
+        assertTrue(footerActions(template.header, strip).isEmpty())
+        val navigate = Action.Builder().setTitle("Navigate").setOnClickListener {}.build()
+        assertEquals(listOf(navigate), footerActions(template.header, strip, listOf(navigate)))
+    }
+}

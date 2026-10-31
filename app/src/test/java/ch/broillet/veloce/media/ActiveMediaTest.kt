@@ -5,6 +5,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.media.MediaMetadata
 import android.os.Bundle
 import android.view.KeyEvent
 import org.junit.Assert.*
@@ -56,7 +57,7 @@ class ActiveMediaTest {
                 .addCustomAction(PlaybackState.CustomAction.Builder("jump", "Jump", 1).setExtras(extras).build()).build())
             shadowOf(context.getSystemService(MediaSessionManager::class.java)).addController(controller)
             media.connect()
-            assertEquals(listOf(MediaAction("jump", "Jump")), media.nowPlaying.value!!.customActions)
+            assertEquals(listOf(MediaAction("jump", "Jump", 1, context.packageName)), media.nowPlaying.value!!.customActions)
             assertEquals(1.5f, media.nowPlaying.value!!.speed)
             assertFalse(media.customAction("unknown", null))
             assertTrue(media.customAction("jump", null))
@@ -65,5 +66,36 @@ class ActiveMediaTest {
             assertFalse(media.setSpeed(Float.NaN, null))
             assertFalse(media.setSpeed(1.5f, null))
         } finally { media.disconnect(); session.release() }
+    }
+
+    @Test fun seekingTargetsTheRequestedAppChecksSupportAndClampsToItsDuration() {
+        val context = RuntimeEnvironment.getApplication()
+        val target = MediaSession(context, "target")
+        val other = MediaSession(context, "other")
+        val controller = MediaController(context, target.sessionToken)
+        val otherController = MediaController(context, other.sessionToken)
+        val media = ActiveMedia(context)
+        try {
+            shadowOf(controller).setPackageName("target.app")
+            shadowOf(otherController).setPackageName("other.app")
+            shadowOf(controller).setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_SEEK_TO)
+                .setState(PlaybackState.STATE_PAUSED, 30_000, 1f).build())
+            shadowOf(otherController).setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_SEEK_TO)
+                .setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
+            shadowOf(controller).setMetadata(MediaMetadata.Builder().putLong(MediaMetadata.METADATA_KEY_DURATION, 180_000).build())
+            val manager = shadowOf(context.getSystemService(MediaSessionManager::class.java))
+            manager.addController(otherController)
+            manager.addController(controller)
+            media.connect()
+            assertTrue(media.seekTo(90_000, "target.app"))
+            assertEquals(90_000L, shadowOf(controller.transportControls).seekToPositionMs)
+            assertNotEquals(PlaybackState.ACTION_SEEK_TO, shadowOf(otherController.transportControls).lastPerformedAction)
+            assertTrue(media.seekTo(300_000, "target.app"))
+            assertEquals(180_000L, shadowOf(controller.transportControls).seekToPositionMs)
+            assertFalse(media.seekTo(-1, "target.app"))
+            assertFalse(media.seekTo(10_000, "missing.app"))
+            shadowOf(controller).setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PAUSED, 0, 1f).build())
+            assertFalse(media.seekTo(10_000, "target.app"))
+        } finally { media.disconnect(); target.release(); other.release() }
     }
 }

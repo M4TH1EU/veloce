@@ -17,8 +17,9 @@ import android.view.KeyEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class MediaArtwork(val uri: Uri? = null, val data: ByteArray? = null, val bitmap: Bitmap? = null)
-data class MediaAction(val id: String, val label: String)
+data class MediaArtwork(val uri: Uri? = null, val data: ByteArray? = null, val bitmap: Bitmap? = null, val cacheKey: String? = null)
+data class MediaAction(val id: String, val label: String, val iconResource: Int = 0,
+    val iconPackage: String? = null, val iconUri: Uri? = null, val enabled: Boolean = true)
 
 data class NowPlaying(
     val packageName: String,
@@ -29,7 +30,19 @@ data class NowPlaying(
     val artwork: MediaArtwork? = null,
     val customActions: List<MediaAction> = emptyList(),
     val speed: Float = 1f,
-)
+    val positionMs: Long = -1,
+    val durationMs: Long = 0,
+    val updatedAtMs: Long = 0,
+    val advancing: Boolean = playing,
+    val mediaId: String? = null,
+    val album: String? = null,
+) {
+    fun positionAt(elapsedRealtime: Long): Long {
+        if (positionMs < 0) return positionMs
+        val elapsed = if (advancing && updatedAtMs > 0) (elapsedRealtime - updatedAtMs).coerceAtLeast(0) else 0
+        return (positionMs + (elapsed * speed).toLong()).coerceIn(0, durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE)
+    }
+}
 
 class ActiveMedia(context: Context) {
     private val manager = context.getSystemService(MediaSessionManager::class.java)
@@ -93,26 +106,7 @@ class ActiveMedia(context: Context) {
             ?: controllers.firstOrNull { it.sessionToken == selected?.sessionToken }
             ?: controllers.firstOrNull()
         selected = active
-        val snapshots = controllers.map {
-            val metadata = it.metadata
-            NowPlaying(
-                it.packageName,
-                metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
-                    ?: metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
-                metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
-                it.playbackState?.state == PlaybackState.STATE_PLAYING,
-                it.playbackState?.actions ?: 0,
-                metadata?.let { data -> MediaArtwork(
-                    uri = (data.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
-                        ?: data.getString(MediaMetadata.METADATA_KEY_ART_URI)
-                        ?: data.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))?.let(Uri::parse),
-                    bitmap = data.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-                        ?: data.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                        ?: data.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)) },
-                it.playbackState?.customActions.orEmpty().take(12).map { action -> MediaAction(action.action, action.name.toString()) },
-                it.playbackState?.playbackSpeed?.takeIf { speed -> speed > 0 } ?: 1f,
-            )
-        }
+        val snapshots = controllers.map(::platformNowPlaying)
         allTracks.value = snapshots
         current.value = snapshots.getOrNull(controllers.indexOf(active))
     }
@@ -135,6 +129,16 @@ class ActiveMedia(context: Context) {
         if (!speed.isFinite() || speed !in .25f..3f || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SET_PLAYBACK_SPEED == 0L) return false
         return try { controller.transportControls.setPlaybackSpeed(speed); true }
         catch (_: SecurityException) { refresh(); false }
+    }
+
+    fun seekTo(positionMs: Long, packageName: String? = null): Boolean {
+        val controller = controller(packageName) ?: return false
+        if (positionMs < 0 || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SEEK_TO == 0L) return false
+        val duration = controller.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0 }
+        return try {
+            controller.transportControls.seekTo(positionMs.coerceAtMost(duration ?: Long.MAX_VALUE))
+            true
+        } catch (_: SecurityException) { refresh(); false }
     }
 
     fun control(action: Long, packageName: String? = null): Boolean {

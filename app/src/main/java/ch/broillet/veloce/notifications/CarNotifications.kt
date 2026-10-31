@@ -9,7 +9,7 @@ import android.service.notification.StatusBarNotification
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class CarNotice(val key: String, val app: String, val title: String, val text: String, val postedAt: Long)
+data class CarNotice(val key: String, val app: String, val title: String, val text: String, val postedAt: Long, val packageName: String = "")
 data class NoticeAlert(val notice: CarNotice, val sequence: Long, val createdAt: Long = SystemClock.elapsedRealtime())
 
 class CarNotifications(private val context: Context) {
@@ -70,6 +70,6 @@ class CarNotifications(private val context: Context) {
         val app = try {
             context.packageManager.getApplicationInfo(sbn.packageName, PackageManager.ApplicationInfoFlags.of(0)).loadLabel(context.packageManager).toString()
         } catch (_: PackageManager.NameNotFoundException) { sbn.packageName }
-        return CarNotice(sbn.key, app.take(100), title.take(200), text.take(1000), sbn.postTime)
+        return CarNotice(sbn.key, app.take(100), title.take(200), text.take(1000), sbn.postTime, sbn.packageName)
     }
 }

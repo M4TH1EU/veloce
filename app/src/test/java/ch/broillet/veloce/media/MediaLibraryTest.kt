@@ -23,6 +23,7 @@ import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
 import androidx.media3.session.CommandButton
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import androidx.media3.session.legacy.MediaBrowserServiceCompat as CompatBrowserService
@@ -120,6 +121,75 @@ class MediaLibraryTest {
         assertFalse(library.page.entries.any { it.id == "late" })
     }
 
+    @Test fun aFullLastPageOrRepeatedPageDoesNotAdvertiseANonworkingNextButton() {
+        service.get().rootCount = MediaLibrary.PAGE_SIZE
+        library.connect()
+        await { !library.page.loading }
+        assertEquals(MediaLibrary.PAGE_SIZE, library.page.entries.size)
+        assertFalse(library.page.more)
+        service.get().rootCount = MediaLibrary.PAGE_SIZE + 5
+        service.get().repeatPage = true
+        library.refresh()
+        await { !library.page.loading }
+        assertFalse(library.page.more)
+        library.changePage(1)
+        assertEquals(0, library.page.folder!!.page)
+        assertTrue(service.get().requests.any { it.second == 1 })
+    }
+
+    @Test fun appProvidedCoverAndChildLayoutHintsSurviveOpeningAFolder() {
+        service.get().folderHints = true
+        library.connect()
+        await { !library.page.loading }
+        assertEquals(MediaPresentation.CATEGORY, library.page.entries.first().presentation)
+        assertEquals(MediaPresentation.LIST, library.page.entries[1].presentation)
+        library.open(library.page.entries.first())
+        await { !library.page.loading }
+        assertEquals(MediaPresentation.LIST, library.page.entries.single().presentation)
+    }
+
+    @Test fun nativePlaybackPreservesTheBrowsedRequestInsteadOfRebuildingATrackId() {
+        service.get().playbackContext = true
+        library.connect()
+        await { !library.page.loading }
+        library.open(library.page.entries.first())
+        await { !library.page.loading }
+        assertTrue(library.play(library.page.entries.single()))
+        await { service.get().receivedItems.isNotEmpty() }
+        val request = service.get().receivedItems.last()
+        assertEquals("original-context", request.requestMetadata.extras!!.getString("test.playback.context"))
+        assertEquals("track", request.mediaId)
+    }
+
+    @Test fun unpagedLegacyFoldersAreSlicedLocallyWithoutRefetchingEveryPage() {
+        val context = RuntimeEnvironment.getApplication()
+        val legacy = Robolectric.buildService(UnpagedLibraryService::class.java).create()
+        try {
+            val component = ComponentName(context, UnpagedLibraryService::class.java)
+            val action = "android.media.browse.MediaBrowserService"
+            registerService(component, action, legacy.get().onBind(Intent(action)))
+            library.close()
+            library = MediaLibrary(context, CarApp(component, "Legacy playlists", AppKind.AUDIO), {})
+            library.connect()
+            await { !library.page.loading }
+            assertEquals(MediaLibrary.PAGE_SIZE, library.page.entries.size)
+            assertEquals("track-0", library.page.entries.first().id)
+            val requests = legacy.get().requests
+            library.changePage(1)
+            await { !library.page.loading }
+            assertEquals("track-40", library.page.entries.first().id)
+            library.changePage(1)
+            await { !library.page.loading }
+            assertEquals("track-80", library.page.entries.first().id)
+            assertEquals(15, library.page.entries.size)
+            assertFalse(library.page.more)
+            library.changePage(-1)
+            await { !library.page.loading }
+            assertEquals("track-40", library.page.entries.first().id)
+            assertEquals(requests, legacy.get().requests)
+        } finally { library.close(); legacy.destroy() }
+    }
+
     @Test fun sameBrowserAlsoConnectsToLegacyFrameworkServices() {
         val context = RuntimeEnvironment.getApplication()
         val legacy = Robolectric.buildService(LegacyLibraryService::class.java).create()
@@ -183,7 +253,11 @@ class MediaLibraryTest {
     @Test fun exposesCustomActionsSpeedAndNativeSeekCommands() {
         library.connect()
         await { !library.page.loading }
-        assertEquals(listOf(MediaAction("jump", "Jump")), library.nowPlaying!!.customActions)
+        val action = library.nowPlaying!!.customActions.single()
+        assertEquals("jump", action.id)
+        assertEquals("Jump", action.label)
+        assertTrue(action.iconResource != 0)
+        assertEquals(RuntimeEnvironment.getApplication().packageName, action.iconPackage)
         assertFalse(library.customAction("not-advertised"))
         assertTrue(library.customAction("jump"))
         await { service.get().customActions.isNotEmpty() }
@@ -201,10 +275,28 @@ class MediaLibraryTest {
         await { service.get().player.seeks.contains(Player.COMMAND_SEEK_BACK) }
     }
 
+    @Test fun absoluteSeekingUsesTheBrowsedSessionAndStopsAfterDisconnect() {
+        library.connect()
+        await { !library.page.loading }
+        library.open(library.page.entries.first())
+        await { !library.page.loading }
+        assertTrue(library.play(library.page.entries.single()))
+        await { service.get().player.playWhenReady }
+        assertTrue(library.nowPlaying!!.actions and PlaybackState.ACTION_SEEK_TO != 0L)
+        assertFalse(library.seekTo(-1))
+        assertTrue(library.seekTo(90_000))
+        await { service.get().player.seekTargets.contains(90_000) }
+        assertTrue(service.get().player.seeks.contains(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM))
+        library.close()
+        assertFalse(library.seekTo(30_000))
+    }
+
     @Test @Config(shadows = [RecordingTransport::class])
     fun legacyCompatSessionsSupportSearchPlayFromIdAndCustomActions() {
         RecordingTransport.played = null
         RecordingTransport.action = null
+        RecordingTransport.playExtras = null
+        RecordingTransport.prepared = 0
         val context = RuntimeEnvironment.getApplication()
         val legacy = Robolectric.buildService(CompatLibraryService::class.java).create()
         try {
@@ -223,6 +315,8 @@ class MediaLibraryTest {
             assertEquals("found-book", library.page.entries.single().id)
             assertTrue(library.play(library.page.entries.single()))
             await { RecordingTransport.played == "found-book" }
+            assertEquals("playlist-context", RecordingTransport.playExtras?.getString("test.playback.context"))
+            assertEquals(0, RecordingTransport.prepared)
             assertTrue(library.customAction("jump"))
             await { RecordingTransport.action == "jump" }
         } finally { library.close(); legacy.destroy() }
@@ -250,6 +344,11 @@ class MediaLibraryTest {
         lateinit var session: MediaLibrarySession
         var rejectRoot = false
         var delayFolder = false
+        var rootCount = 41
+        var repeatPage = false
+        var folderHints = false
+        var playbackContext = false
+        val receivedItems = mutableListOf<MediaItem>()
         var pendingFolder: SettableFuture<LibraryResult<ImmutableList<MediaItem>>>? = null
         val requests = mutableListOf<Triple<String, Int, Int>>()
         var delaySearch = false
@@ -291,13 +390,23 @@ class MediaLibraryTest {
                     parentId: String, page: Int, pageSize: Int, params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
                     requests.add(Triple(parentId, page, pageSize))
                     if (parentId == "folder" && delayFolder) return SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>().also { pendingFolder = it }
-                    val entries = if (parentId == "root") listOf(item("folder", true)) + (1..40).map { item("track-$it") } else listOf(item("track"))
-                    return Futures.immediateFuture(LibraryResult.ofItemList(entries.drop(page * pageSize).take(pageSize), params))
+                    var folder = item("folder", true)
+                    if (folderHints) folder = folder.buildUpon().setMediaMetadata(folder.mediaMetadata.buildUpon().setExtras(Bundle().apply {
+                        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_SINGLE_ITEM, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_GRID_ITEM)
+                        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM)
+                    }).build()).build()
+                    var track = item("track")
+                    if (playbackContext) track = track.buildUpon().setRequestMetadata(MediaItem.RequestMetadata.Builder()
+                        .setExtras(Bundle().apply { putString("test.playback.context", "original-context") }).build()).build()
+                    val entries = if (parentId == "root") listOf(folder) + (1 until rootCount).map { item("track-$it") } else listOf(track)
+                    return Futures.immediateFuture(LibraryResult.ofItemList(entries.drop(if (repeatPage) 0 else page * pageSize).take(pageSize), params))
                 }
                 override fun onSubscribe(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?) =
                     Futures.immediateFuture(LibraryResult.ofVoid(params))
-                override fun onAddMediaItems(session: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: List<MediaItem>) =
-                    Futures.immediateFuture(mediaItems)
+                override fun onAddMediaItems(session: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: List<MediaItem>): ListenableFuture<List<MediaItem>> {
+                    receivedItems.addAll(mediaItems)
+                    return Futures.immediateFuture(mediaItems)
+                }
             }).build()
         }
         override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
@@ -306,6 +415,7 @@ class MediaLibraryTest {
 
     class TestPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
         val seeks = mutableListOf<Int>()
+        val seekTargets = mutableListOf<Long>()
         private var snapshot = State.Builder().setAvailableCommands(Player.Commands.Builder().addAllCommands().build()).build()
         override fun getState() = snapshot
         override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> {
@@ -326,6 +436,7 @@ class MediaLibraryTest {
         }
         override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> {
             seeks.add(seekCommand)
+            seekTargets.add(positionMs)
             return Futures.immediateVoidFuture()
         }
         override fun handleRelease() = Futures.immediateVoidFuture()
@@ -361,16 +472,37 @@ class MediaLibraryTest {
         override fun onGetRoot(packageName: String?, uid: Int, hints: Bundle?) = BrowserRoot("compat-root",
             Bundle().apply { putBoolean("android.media.browse.SEARCH_SUPPORTED", true) })
         private fun entry(id: String) = CompatBrowser.MediaItem(androidx.media3.session.legacy.MediaDescriptionCompat.Builder()
-            .setMediaId(id).setTitle(id).build(), CompatBrowser.MediaItem.FLAG_PLAYABLE)
+            .setMediaId(id).setTitle(id).setExtras(Bundle().apply { putString("test.playback.context", "playlist-context") }).build(), CompatBrowser.MediaItem.FLAG_PLAYABLE)
         override fun onLoadChildren(parentId: String?, result: Result<MutableList<CompatBrowser.MediaItem>>) = result.sendResult(mutableListOf(entry("book")))
         override fun onSearch(query: String, extras: Bundle?, result: Result<MutableList<CompatBrowser.MediaItem>>) = result.sendResult(mutableListOf(entry("found-$query")))
         override fun onDestroy() { session.release(); super.onDestroy() }
     }
 
+    class UnpagedLibraryService : CompatBrowserService() {
+        private lateinit var session: CompatSession
+        var requests = 0
+        override fun onCreate() {
+            super.onCreate()
+            session = CompatSession(this, "unpaged", null, null, null, null).also { setSessionToken(it.sessionToken) }
+        }
+        override fun onGetRoot(packageName: String?, uid: Int, hints: Bundle?) = BrowserRoot("all-tracks", null)
+        override fun onLoadChildren(parentId: String?, result: Result<MutableList<CompatBrowser.MediaItem>>) = children(result)
+        override fun onLoadChildren(parentId: String?, result: Result<MutableList<CompatBrowser.MediaItem>>, options: Bundle?) = children(result)
+        private fun children(result: Result<MutableList<CompatBrowser.MediaItem>>) {
+            requests++
+            result.sendResult((0 until 95).map { index ->
+                CompatBrowser.MediaItem(androidx.media3.session.legacy.MediaDescriptionCompat.Builder()
+                    .setMediaId("track-$index").setTitle("Track $index").build(), CompatBrowser.MediaItem.FLAG_PLAYABLE)
+            }.toMutableList())
+        }
+        override fun onDestroy() { session.release(); super.onDestroy() }
+    }
+
     @Implements(android.media.session.MediaController.TransportControls::class)
     class RecordingTransport : ShadowTransportControls() {
-        companion object { var played: String? = null; var action: String? = null }
-        @Implementation protected fun playFromMediaId(mediaId: String?, extras: Bundle?) { played = mediaId }
+        companion object { var played: String? = null; var action: String? = null; var playExtras: Bundle? = null; var prepared = 0 }
+        @Implementation protected fun playFromMediaId(mediaId: String?, extras: Bundle?) { played = mediaId; playExtras = extras }
+        @Implementation protected fun prepareFromMediaId(mediaId: String?, extras: Bundle?) { prepared++ }
         @Implementation override fun sendCustomAction(customAction: String, extras: Bundle?) { action = customAction }
     }
 

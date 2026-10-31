@@ -22,6 +22,7 @@ import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.car.app.serialization.Bundleable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
 import ch.broillet.veloce.apps.CarApp
 import ch.broillet.veloce.apps.AppKind
@@ -61,10 +62,11 @@ class CarAppHost(
     private var surface: SurfaceContainer? = null
     private val ownedSurfaces = mutableSetOf<SurfaceContainer>()
     private var visibleArea = Rect()
+    private var stableArea = Rect()
     private var alertTimer: Job? = null
     var navigating by mutableStateOf(false)
         private set
-    var template by mutableStateOf<Template?>(null)
+    var template by mutableStateOf<Template?>(null, referentialEqualityPolicy())
         private set
     var error by mutableStateOf<String?>(null)
         private set
@@ -286,21 +288,23 @@ class CarAppHost(
 
     private fun deliverSurface(callback: ISurfaceCallback, target: SurfaceContainer) {
         val area = Rect(visibleArea)
+        val stable = Rect(stableArea)
         surfaceCall {
             request { callback.onSurfaceAvailable(Bundleable.create(target), it) }
             request { callback.onVisibleAreaChanged(area, it) }
-            request { callback.onStableAreaChanged(area, it) }
+            request { callback.onStableAreaChanged(stable, it) }
         }
     }
 
-    fun surfaceArea(area: Rect) {
-        if (area == visibleArea) return
+    fun surfaceArea(area: Rect, stable: Rect = area) {
+        if (area == visibleArea && stable == stableArea) return
         visibleArea = Rect(area)
+        stableArea = Rect(stable)
         val callback = surfaceCallback ?: return
         if (surface == null) return
         surfaceCall {
             request { callback.onVisibleAreaChanged(area, it) }
-            request { callback.onStableAreaChanged(area, it) }
+            request { callback.onStableAreaChanged(stable, it) }
         }
     }
 
