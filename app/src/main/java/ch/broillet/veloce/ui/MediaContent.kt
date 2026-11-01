@@ -4,6 +4,7 @@ import android.media.session.PlaybackState
 import android.graphics.Bitmap
 import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.res.stringResource
@@ -102,6 +104,51 @@ internal fun PlaybackControls(track: NowPlaying?, control: (Long) -> Unit, size:
     Button(if (track?.playing == true) CarSymbol.Pause else CarSymbol.Play,
         if (track?.playing == true) R.string.pause else R.string.play, track?.toggleAction ?: PlaybackState.ACTION_PLAY_PAUSE, primary = true)
     Button(CarSymbol.Next, R.string.next_track, PlaybackState.ACTION_SKIP_TO_NEXT)
+}
+
+@Composable
+internal fun CompactMediaPlayer(track: NowPlaying?, open: () -> Unit, browse: () -> Unit, control: (Long) -> Boolean, modifier: Modifier) {
+    val artwork = rememberArtwork(track?.artwork)
+    var failed by remember(track?.packageName) { mutableStateOf(false) }
+    AlbumSceneTheme(artwork, dense = false) {
+        BoxWithConstraints(modifier) {
+            val compact = maxHeight < 400.dp
+            GlassSurface(Modifier.fillMaxSize(), opacity = .94f) {
+                Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.now_playing), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        GlassIconButton(CarSymbol.Library, stringResource(R.string.media_library), browse, size = 48.dp, iconSize = 24.dp)
+                    }
+                    Column(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp))
+                        .clickable(role = Role.Button, onClickLabel = stringResource(if (track == null) R.string.choose_audio_app else R.string.open_player), onClick = open),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            ArtworkTransition(artwork, Modifier.sizeIn(maxWidth = 200.dp, maxHeight = 200.dp)
+                                .aspectRatio(1f, matchHeightConstraintsFirst = true).clip(RoundedCornerShape(24.dp))) { art, layer -> ArtworkImage(art, layer) }
+                        }
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(track?.title?.takeIf { it.isNotBlank() } ?: stringResource(if (track == null) R.string.no_playback else R.string.now_playing),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontSize = if (compact) 20.sp else 22.sp, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                            Text(when {
+                                failed -> stringResource(R.string.media_unavailable)
+                                track == null -> stringResource(R.string.choose_audio_app)
+                                else -> track.artist?.takeIf { it.isNotBlank() } ?: track.album.orEmpty()
+                            },
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PlaybackControls(track, { failed = !control(it) }, size = 56.dp, playSize = 64.dp)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

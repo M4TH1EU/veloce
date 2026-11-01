@@ -32,7 +32,13 @@
     <string name="home">Home</string>
     <string name="back">Back</string>
     <string name="now_playing">Now playing</string>
-    <string name="return_to_car">Car</string>
+    <string name="open_player">Open full player</string>
+    <string name="split_screen">Show map and audio</string>
+    <string name="fullscreen_map">Show fullscreen map</string>
+    <string name="choose_audio_app">Choose audio app</string>
+    <string name="no_playback">Nothing playing yet</string>
+    <string name="no_audio_apps">Install a compatible audio app to see it here.</string>
+    <string name="return_to_car">Exit to car</string>
     <string name="start_playback">Start playback on your phone</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
@@ -40,8 +46,9 @@
     <string name="fast_forward">Forward</string>
     <string name="search">Search</string>
     <string name="no_apps">No car apps found. Install an app with an Android Auto interface.</string>
-    <string name="resume_navigation">Return to %1$s</string>
     <string name="stop_navigation">Stop route</string>
+    <string name="arrival_time">%1$s arrival</string>
+    <string name="remaining_minutes">%1$d min</string>
     <string name="media_browse_denied">Browsing may be restricted by this app. Try Now playing; an existing session can also be controlled with notification access.</string>
     <string name="media_empty">Nothing here yet</string>
     <string name="media_page">Page %1$d</string>

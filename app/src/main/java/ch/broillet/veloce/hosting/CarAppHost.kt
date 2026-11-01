@@ -39,6 +39,7 @@ class CarAppHost(
     private val finish: () -> Unit,
     private val log: (String) -> Unit,
     private val home: () -> Unit = finish,
+    private val onNavigationStarted: () -> Unit = {},
 ) : Closeable {
     private val context = displayContext.applicationContext
     private val configuration = Configuration(displayContext.resources.configuration).apply {
@@ -64,6 +65,8 @@ class CarAppHost(
     private var visibleArea = Rect()
     private var stableArea = Rect()
     private var alertTimer: Job? = null
+    private var dismissedNotice: String? = null
+    private var dismissedAlert: Alert? = null
     var navigating by mutableStateOf(false)
         private set
     var template by mutableStateOf<Template?>(null, referentialEqualityPolicy())
@@ -123,7 +126,13 @@ class CarAppHost(
 
     private val appHost = object : IAppHost.Stub() {
         override fun invalidate() = fromApp { invalidations.trySend(Unit) }
-        override fun showToast(text: CharSequence, duration: Int) = fromApp { notice = text.toString().take(500) }
+        override fun showToast(text: CharSequence, duration: Int) = fromApp {
+            val message = text.toString().take(500)
+            if (message != dismissedNotice) {
+                dismissedNotice = null
+                notice = message.takeIf { it.isNotBlank() }
+            }
+        }
         override fun setSurfaceCallback(callback: ISurfaceCallback?) = fromApp {
             val old = surfaceCallback
             val target = surface
@@ -135,11 +144,12 @@ class CarAppHost(
         override fun showAlert(bundle: Bundleable) = fromApp {
             val incoming = bundle.get() as Alert
             if (!visible || template !is NavigationTemplate) {
-                incoming.callbackDelegate?.let { delegate ->
-                    event { delegate.sendCancel(AlertCallback.REASON_NOT_SUPPORTED, it) }
-                    event { delegate.sendDismiss(it) }
-                }
+                finishAlert(incoming, AlertCallback.REASON_NOT_SUPPORTED)
+            } else if (dismissedAlert?.let { it.title == incoming.title && it.subtitle == incoming.subtitle &&
+                    it.icon == incoming.icon && it.actions == incoming.actions } == true) {
+                finishAlert(incoming, AlertCallback.REASON_USER_ACTION)
             } else if (alert?.id != incoming.id) {
+                dismissedAlert = null
                 dismissAlert()
                 alert = incoming
                 if (incoming.durationMillis > 0) alertTimer = scope.launch {
@@ -157,7 +167,15 @@ class CarAppHost(
     }
 
     private val navigationHost = object : INavigationHost.Stub() {
-        override fun navigationStarted() = fromApp { navigating = true; log("Car app navigation started") }
+        override fun navigationStarted() = fromApp {
+            if (!navigating) {
+                dismissedNotice = null
+                dismissedAlert = null
+                onNavigationStarted()
+                navigating = true
+                log("Car app navigation started")
+            }
+        }
         override fun navigationEnded() = fromApp { navigating = false; log("Car app navigation ended") }
         override fun updateTrip(trip: Bundleable?) { enforceCaller() } // Cluster forwarding is not advertised.
     }
@@ -260,7 +278,10 @@ class CarAppHost(
         launch { appCalls.withLock { request { call(it.asDoneCallback()) } } }
     }
 
-    fun dismissNotice() { notice = null }
+    fun dismissNotice() {
+        notice?.let { dismissedNotice = it }
+        notice = null
+    }
 
     fun stopNavigation() {
         val endpoint = navigation ?: return
@@ -270,11 +291,16 @@ class CarAppHost(
         }
     }
 
-    fun dismissAlert(reason: Int? = null) {
+    fun dismissAlert(reason: Int? = null, userInitiated: Boolean = reason == AlertCallback.REASON_USER_ACTION) {
         val previous = alert ?: return
+        if (userInitiated) dismissedAlert = previous
         alert = null
         alertTimer?.cancel()
-        previous.callbackDelegate?.let { delegate ->
+        finishAlert(previous, reason)
+    }
+
+    private fun finishAlert(value: Alert, reason: Int?) {
+        value.callbackDelegate?.let { delegate ->
             if (reason != null) event { delegate.sendCancel(reason, it) }
             event { delegate.sendDismiss(it) }
         }

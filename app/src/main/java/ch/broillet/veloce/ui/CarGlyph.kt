@@ -11,6 +11,8 @@ import ch.broillet.veloce.R
 internal enum class CarSymbol(@param:DrawableRes val icon: Int) {
     Home(R.drawable.ic_rounded_home),
     Navigation(R.drawable.ic_rounded_navigation),
+    SplitScreen(R.drawable.ic_rounded_split_screen),
+    Fullscreen(R.drawable.ic_rounded_fullscreen),
     Bell(R.drawable.ic_rounded_notifications),
     Car(R.drawable.ic_rounded_car),
     Back(R.drawable.ic_rounded_back),

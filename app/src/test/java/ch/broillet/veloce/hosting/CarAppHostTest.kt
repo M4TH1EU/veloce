@@ -17,6 +17,10 @@ import android.view.Surface
 import androidx.car.app.*
 import androidx.car.app.model.MessageTemplate
 import androidx.car.app.model.Action
+import androidx.car.app.model.ActionStrip
+import androidx.car.app.model.Alert
+import androidx.car.app.model.AlertCallback
+import androidx.car.app.model.CarText
 import androidx.car.app.model.Template
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
@@ -25,6 +29,7 @@ import androidx.car.app.model.Toggle
 import androidx.car.app.model.TemplateWrapper
 import androidx.car.app.navigation.INavigationManager
 import androidx.car.app.navigation.INavigationHost
+import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.car.app.serialization.Bundleable
 import androidx.car.app.serialization.Bundler
 import androidx.car.app.hardware.common.CarHardwareHostDispatcher
@@ -159,10 +164,111 @@ class CarAppHostTest {
         await { "endNavigation" in endpoint.calls }
     }
 
+    @Test fun newRoutesStartFullscreenButPageChangesAndDuplicateStartEventsKeepTheChosenLayout() {
+        val context = RuntimeEnvironment.getApplication()
+        val navigation = CarNavigation()
+        val workspace = CarWorkspace(context, navigation, logs::add)
+        try {
+            workspace.setSplitLayout(true)
+            workspace.open(host.app)
+            val retained = workspace.host!!
+            await { retained.template != null }
+            val navigationHost = INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE))
+            val appHost = IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE))
+            navigationHost.navigationStarted()
+            await { retained.navigating }
+            assertFalse(workspace.splitScreen)
+            workspace.setSplitLayout(true)
+            navigation.home()
+            workspace.updateVisibility()
+            await { "stop" in endpoint.calls }
+            workspace.open(host.app)
+            await { endpoint.calls.count { it == "resume" } == 2 }
+            await { endpoint.calls.count { it == "template" } == 2 }
+            assertTrue(workspace.splitScreen)
+            val count = endpoint.calls.count { it == "template" }
+            navigationHost.navigationStarted()
+            appHost.invalidate()
+            await { endpoint.calls.count { it == "template" } > count }
+            assertTrue(workspace.splitScreen)
+            navigationHost.navigationEnded()
+            await { !retained.navigating }
+            navigationHost.navigationStarted()
+            await { retained.navigating }
+            assertFalse(workspace.splitScreen)
+            assertFalse(context.getSharedPreferences("launcher", Application.MODE_PRIVATE).getBoolean("split_screen", true))
+            assertSame(retained, workspace.host)
+            assertEquals(1, endpoint.calls.count { it == "create" })
+        } finally { workspace.close() }
+    }
+
+    @Test fun dismissedNoticesStayHiddenUntilTheMessageChangesOrANewRouteStarts() {
+        host.connect()
+        await { host.template != null }
+        val appHost = IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE))
+        appHost.showToast("No GPS signal", 1)
+        await { host.notice != null }
+        host.dismissNotice()
+        appHost.showToast("No GPS signal", 1)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(host.notice)
+        appHost.showToast("GPS signal restored", 1)
+        await { host.notice == "GPS signal restored" }
+        appHost.showToast("No GPS signal", 1)
+        await { host.notice == "No GPS signal" }
+        host.dismissNotice()
+        INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
+        await { host.navigating }
+        appHost.showToast("No GPS signal", 1)
+        await { host.notice == "No GPS signal" }
+    }
+
+    @Test fun userDismissedAlertsStayHiddenAcrossIdsButChangedAndTimedOutAlertsCanShow() {
+        endpoint.template = NavigationTemplate.Builder().setActionStrip(ActionStrip.Builder()
+            .addAction(Action.Builder().setTitle("Options").setOnClickListener {}.build()).build()).build()
+        host.connect()
+        await { host.template != null }
+        val appHost = IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE))
+        val received = java.util.Collections.synchronizedList(mutableListOf<String>())
+        fun warning(id: Int, title: String = "No GPS signal"): Bundleable = Bundleable.create(
+            Alert.Builder(id, CarText.create(title), Alert.DURATION_SHOW_INDEFINITELY.toLong())
+                .setCallback(object : AlertCallback {
+                    override fun onCancel(reason: Int) { received.add("$id:cancel:$reason") }
+                    override fun onDismiss() { received.add("$id:dismiss") }
+                }).build())
+        appHost.showAlert(warning(1))
+        await { host.alert?.id == 1 }
+        host.dismissAlert(AlertCallback.REASON_USER_ACTION)
+        await { received.size == 2 }
+        assertEquals(listOf("1:cancel:2", "1:dismiss"), received.toList())
+        appHost.showAlert(warning(2))
+        await { received.size == 4 }
+        assertNull(host.alert)
+        assertEquals(listOf("2:cancel:2", "2:dismiss"), received.toList().takeLast(2))
+        appHost.showAlert(warning(3, "Recalculating route"))
+        await { host.alert?.id == 3 }
+        host.dismissAlert(AlertCallback.REASON_TIMEOUT)
+        await { received.size == 6 }
+        assertEquals(listOf("3:cancel:1", "3:dismiss"), received.toList().takeLast(2))
+        appHost.showAlert(warning(4, "Recalculating route"))
+        await { host.alert?.id == 4 }
+        host.dismissAlert(userInitiated = true)
+        await { received.size == 7 }
+        assertEquals("4:dismiss", received.last())
+        appHost.showAlert(warning(5, "Recalculating route"))
+        await { received.size == 9 }
+        assertNull(host.alert)
+        INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
+        await { host.navigating }
+        appHost.showAlert(warning(6, "Recalculating route"))
+        await { host.alert?.id == 6 }
+        assertNull(host.error)
+    }
+
     @Test fun surfaceRegisteredBeforeCallbackGetsDimensionsBoundsAndGestures() {
         host.connect()
         await { host.template != null }
-        val target = SurfaceContainer(Surface(SurfaceTexture(0)), 640, 360, 160)
+        var target = SurfaceContainer(Surface(SurfaceTexture(0)), 640, 360, 160)
         host.surfaceArea(Rect(0, 0, 640, 360))
         host.surfaceAvailable(target)
         val received = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -178,7 +284,7 @@ class CarAppHostTest {
             override fun onScroll(x: Float, y: Float) { received.add("scroll:$x,$y") }
             override fun onFling(x: Float, y: Float) = Unit
             override fun onScale(x: Float, y: Float, factor: Float) = Unit
-            override fun onClick(x: Float, y: Float) = Unit
+            override fun onClick(x: Float, y: Float) { received.add("click:$x,$y") }
         }
         IAppHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.APP_SERVICE)).setSurfaceCallback(callback)
         await { received.size == 3 || host.error != null }
@@ -192,8 +298,23 @@ class CarAppHostTest {
         host.surfaceArea(Rect(100, 80, 560, 280), Rect(80, 40, 560, 300))
         await { received.size == 8 }
         assertEquals("stable:480x260", received.last())
+        for (width in listOf(416, 640)) {
+            val count = received.size
+            host.surfaceDestroyed(target)
+            host.surfaceArea(Rect(104, 16, width - 16, 344), Rect(104, 80, width - 80, 344))
+            target = SurfaceContainer(Surface(SurfaceTexture(0)), width, 360, 160)
+            host.surfaceAvailable(target)
+            await { received.size == count + 4 }
+            assertEquals(listOf("destroyed", "available:${width}x360@160", "visible:${width - 120}x328", "stable:${width - 184}x264"),
+                received.toList().takeLast(4))
+        }
+        host.gesture { it.onClick(210f, 180f) }
+        await { received.last() == "click:210.0,180.0" }
+        assertEquals(1, endpoint.calls.count { it == "create" })
+        assertFalse("stop" in endpoint.calls)
+        val count = received.size
         host.surfaceDestroyed(target)
-        await { "destroyed" in received }
+        await { received.size == count + 1 }
         assertEquals("scroll:12.0,5.0", received[3])
     }
 

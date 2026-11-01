@@ -37,14 +37,12 @@ internal val LocalGlassOpacity = staticCompositionLocalOf { .64f }
 
 @Composable
 internal fun Modifier.carEntrance(destination: Any?): Modifier {
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(destination) {
-        progress.snapTo(.15f)
-        progress.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+    val progress = remember(destination) { Animatable(.75f) }
+    LaunchedEffect(progress) {
+        progress.animateTo(1f, tween(140, easing = FastOutSlowInEasing))
     }
     return graphicsLayer {
         alpha = progress.value
-        translationY = 10.dp.toPx() * (1f - progress.value)
     }
 }
 

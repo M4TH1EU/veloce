@@ -46,14 +46,11 @@ import ch.broillet.veloce.ui.CarTextButton
 import ch.broillet.veloce.ui.LocalGlassOpacity
 import ch.broillet.veloce.ui.carEntrance
 import ch.broillet.veloce.ui.HostNotice
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
 
 @Composable
 internal fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifier, mapInsets: PaddingValues = PaddingValues(12.dp),
-    headerInToolbar: Boolean = false, bottomOverlay: Dp = 0.dp, mapScene: MapScene? = null) {
+    headerInToolbar: Boolean = false, bottomOverlay: Dp = 0.dp, mapScene: MapScene? = null, mapOverview: Boolean = false) {
     val configuration = android.content.res.Configuration(LocalConfiguration.current)
     LaunchedEffect(host, configuration) { host.updateConfiguration(configuration) }
     CompositionLocalProvider(LocalGlassOpacity provides .96f) {
@@ -68,6 +65,7 @@ internal fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifie
                     CarTextButton("Home", home)
                 }
                 template == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                mapOverview && template is NavigationTemplate -> MapOverviewContent(template, host, Modifier.fillMaxSize(), mapInsets, mapScene)
                 else -> TemplateContent(template, host, Modifier.fillMaxSize(), mapInsets, !headerInToolbar, bottomOverlay, mapScene)
             }
         }
@@ -81,9 +79,9 @@ internal fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifie
                         }
                         if (alert.subtitle.text().isNotBlank()) Text(alert.subtitle.text(), style = MaterialTheme.typography.titleMedium)
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (alert.actions.isEmpty()) CarTextButton("OK", { host.dismissAlert() })
+                            if (alert.actions.isEmpty()) CarTextButton("OK", { host.dismissAlert(AlertCallback.REASON_USER_ACTION) })
                             else alert.actions.forEach { action ->
-                                ActionButton(action, host) { host.click(action); host.dismissAlert() }
+                                ActionButton(action, host) { host.click(action); host.dismissAlert(userInitiated = true) }
                             }
                         }
                     }
@@ -197,7 +195,6 @@ internal fun Template?.hasMapSurface(): Boolean = when (this) {
 @androidx.annotation.OptIn(androidx.car.app.annotations.ExperimentalCarApi::class)
 private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: Modifier, insets: PaddingValues, bottomOverlay: Dp, mapScene: MapScene?) {
     val navigation = template as? NavigationTemplate
-    val content = (template as? MapWithContentTemplate)?.contentTemplate
     val controller = when (template) {
         is MapWithContentTemplate -> template.mapController
         is MapTemplate -> template.mapController
@@ -281,7 +278,7 @@ private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: M
             mapScene.panStart = startPan
             mapScene.panEnd = endPan
         }
-        Row(Modifier.fillMaxSize().padding(insets).carEntrance(content?.javaClass ?: template.javaClass),
+        Row(Modifier.fillMaxSize().padding(insets),
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (panelWidth > 0.dp) GlassSurface(Modifier.width(panelWidth).padding(bottom = bottomOverlay).fillMaxHeight(), RoundedCornerShape(28.dp)) {
                 Box(Modifier.padding(8.dp)) {
@@ -296,12 +293,11 @@ private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: M
                             if (navigation != null) NavigationInfo(navigation, host)
                         }
                     }
-                    val actionOffset by animateDpAsState(noticeSpace, tween(220), label = "Map notice space")
                     Box(Modifier.widthIn(max = actionWidth).height(topHeight)) {
                         host.notice?.let { message ->
                             HostNotice(message, host::dismissNotice, Modifier.fillMaxWidth().carEntrance(message))
                         }
-                        Row(Modifier.align(Alignment.TopEnd).graphicsLayer { translationY = actionOffset.toPx() }
+                        Row(Modifier.align(Alignment.TopEnd).padding(top = noticeSpace)
                             .horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             primary.forEach { ActionButton(it, host, compact = true) }
                         }

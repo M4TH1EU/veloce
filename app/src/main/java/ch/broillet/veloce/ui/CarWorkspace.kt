@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
 import ch.broillet.veloce.hosting.CarAppHost
@@ -15,6 +16,9 @@ class CarWorkspace(
     private val navigation: CarNavigation,
     private val log: (String) -> Unit,
 ) : Closeable {
+    private val preferences = context.applicationContext.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+    var splitScreen by mutableStateOf(preferences.getBoolean("split_screen", true))
+        private set
     var host by mutableStateOf<CarAppHost?>(null)
         private set
     var library by mutableStateOf<MediaLibrary?>(null)
@@ -36,7 +40,7 @@ class CarWorkspace(
                     opened.close()
                     if (navigation.selected?.component == app.component) navigation.home()
                 }
-            }, log, navigation::home)
+            }, log, navigation::home, onNavigationStarted = { if (host === opened) setSplitLayout(false) })
             host = opened
             opened.setVisible(navigation.projected)
             opened.connect()
@@ -50,6 +54,11 @@ class CarWorkspace(
 
     fun updateVisibility() {
         host?.setVisible(navigation.projected && navigation.selected?.component == host?.app?.component && !navigation.player && !navigation.notificationsOpen)
+    }
+
+    fun setSplitLayout(value: Boolean) {
+        splitScreen = value
+        preferences.edit { putBoolean("split_screen", value) }
     }
 
     override fun close() {
