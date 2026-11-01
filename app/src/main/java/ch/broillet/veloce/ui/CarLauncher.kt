@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
+import android.text.format.DateFormat
 import androidx.car.app.model.SearchTemplate
 import ch.broillet.veloce.media.ActiveMedia
 import ch.broillet.veloce.media.NowPlaying
@@ -270,7 +272,7 @@ private fun CarSidebar(navigation: CarNavigation, count: Int, openMap: () -> Uni
     GlassSurface(modifier, RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 32.dp, bottomEnd = 32.dp),
         opacity = if (dense) .65f else .42f) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val compact = maxHeight < 380.dp
+            val compact = maxHeight < 400.dp
             val buttonSize = if (compact) 56.dp else 60.dp
             Column(Modifier.fillMaxSize().padding(vertical = if (compact) 8.dp else 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 10.dp)) {
@@ -286,8 +288,10 @@ private fun CarSidebar(navigation: CarNavigation, count: Int, openMap: () -> Uni
                 }
                 Spacer(Modifier.weight(1f))
                 GlassIconButton(CarSymbol.Car, stringResource(R.string.return_to_car), exit, size = buttonSize, opacity = .12f)
-                PhoneStatus()
-                SidebarClock()
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    PhoneStatus()
+                    SidebarClock()
+                }
             }
         }
     }
@@ -296,14 +300,22 @@ private fun CarSidebar(navigation: CarNavigation, count: Int, openMap: () -> Uni
 @Composable
 private fun SidebarClock() {
     val context = LocalContext.current
-    val clock by produceState("") {
+    val clock by produceState(Date()) {
         while (true) {
-            value = android.text.format.DateFormat.getTimeFormat(context).format(Date())
+            value = Date()
             delay(60_000 - System.currentTimeMillis() % 60_000)
         }
     }
-    Text(clock, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+    val is24Hour = DateFormat.is24HourFormat(context)
+    Column(Modifier.padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(DateFormat.format(if (is24Hour) "HH:mm" else "h:mm", clock).toString(),
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp, fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
+        if (!is24Hour) Text(DateFormat.format("a", clock).toString(),
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp, lineHeight = 14.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+    }
 }
 
 @Composable

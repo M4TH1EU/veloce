@@ -11,24 +11,28 @@ import android.os.BatteryManager
 import android.telephony.SignalStrength
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import ch.broillet.veloce.R
 
 private data class PhoneState(val battery: Int? = null, val charging: Boolean = false, val wifi: Boolean = false,
     val connected: Boolean = false, val networkLevel: Int? = null)
+
+private val wifiIcons = listOf(R.drawable.ic_rounded_wifi_0, R.drawable.ic_rounded_wifi_1,
+    R.drawable.ic_rounded_wifi_2, R.drawable.ic_rounded_wifi_3, R.drawable.ic_rounded_wifi_4)
+private val cellularIcons = listOf(R.drawable.ic_rounded_cellular_0, R.drawable.ic_rounded_cellular_1,
+    R.drawable.ic_rounded_cellular_2, R.drawable.ic_rounded_cellular_3, R.drawable.ic_rounded_cellular_4)
 
 @Composable
 internal fun PhoneStatus(modifier: Modifier = Modifier) {
@@ -76,47 +80,35 @@ internal fun PhoneStatus(modifier: Modifier = Modifier) {
         }
     }
     val color = MaterialTheme.colorScheme.onSurface
-    val surface = MaterialTheme.colorScheme.surface
     val label = buildString {
         append(status.battery?.let { "Battery $it percent" } ?: "Battery")
         if (status.charging) append(", charging")
         append(if (status.connected) if (status.wifi) ", Wi-Fi" else ", cellular" else ", offline")
         status.networkLevel?.let { append(", signal $it of 4") }
     }
-    Row(modifier.semantics { contentDescription = label }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Canvas(Modifier.size(22.dp, 16.dp)) {
-            if (status.wifi) {
-                for (ring in 1..3) {
-                    val radius = size.width * .65f * ring / 3f
-                    drawArc(color.copy(alpha = if (status.connected && (status.networkLevel ?: 0) >= ring) .9f else .25f),
-                        225f, 90f, false, Offset(size.width / 2 - radius, size.height - radius), Size(radius * 2, radius * 2),
-                        style = Stroke(1.7.dp.toPx(), cap = StrokeCap.Round))
-                }
-                drawCircle(color.copy(alpha = if (status.connected) .9f else .25f), 1.4.dp.toPx(), Offset(size.width / 2, size.height - 1.dp.toPx()))
-            } else for (bar in 0..3) {
-                val width = size.width / 6f
-                val height = size.height * (bar + 1) / 4f
-                drawRoundRect(color.copy(alpha = if (status.connected && (status.networkLevel ?: 0) > bar) .9f else .25f),
-                    Offset(bar * size.width / 4, size.height - height), Size(width, height), CornerRadius(1.dp.toPx()))
-            }
-        }
-        Canvas(Modifier.size(25.dp, 15.dp)) {
-            val stroke = 1.2.dp.toPx()
-            val end = size.width - 3.dp.toPx()
-            drawRoundRect(color.copy(alpha = .8f), Offset(stroke, stroke), Size(end - stroke * 2, size.height - stroke * 2),
-                CornerRadius(3.dp.toPx()), style = Stroke(stroke))
-            drawLine(color.copy(alpha = .8f), Offset(end + 1.dp.toPx(), size.height * .35f),
-                Offset(end + 1.dp.toPx(), size.height * .65f), stroke, cap = StrokeCap.Round)
-            val fraction = (status.battery ?: 0).coerceIn(0, 100) / 100f
-            drawRoundRect(color.copy(alpha = .9f), Offset(3.dp.toPx(), 3.dp.toPx()),
-                Size(((end - 6.dp.toPx()) * fraction).coerceAtLeast(0f), size.height - 6.dp.toPx()), CornerRadius(1.dp.toPx()))
-            if (status.charging) {
-                val bolt = Path().apply {
-                    moveTo(end * .55f, size.height * .12f); lineTo(end * .35f, size.height * .55f)
-                    lineTo(end * .55f, size.height * .55f); lineTo(end * .4f, size.height * .9f)
-                }
-                drawPath(bolt, surface, style = Stroke(1.8.dp.toPx(), cap = StrokeCap.Round))
-            }
+    val level = if (status.connected) (status.networkLevel ?: 0).coerceIn(0, 4) else 0
+    val networkIcon = (if (status.wifi) wifiIcons else cellularIcons)[level]
+    Row(modifier.semantics { contentDescription = label }, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(networkIcon), contentDescription = null, modifier = Modifier.size(24.dp),
+            tint = if (status.connected) color else color.copy(alpha = .38f))
+        BatteryIndicator(status.battery, status.charging)
+    }
+}
+
+@Composable
+private fun BatteryIndicator(level: Int?, charging: Boolean) {
+    val color = MaterialTheme.colorScheme.onSurface
+    val battery = painterResource(R.drawable.ic_rounded_battery)
+    val fraction = (level ?: 0).coerceIn(0, 100) / 100f
+    Box(Modifier.size(30.dp, 20.dp), contentAlignment = Alignment.Center) {
+        Icon(battery, contentDescription = null, modifier = Modifier.fillMaxSize(), tint = color.copy(alpha = .28f))
+        Icon(battery, contentDescription = null, modifier = Modifier.fillMaxSize().drawWithContent {
+            clipRect(left = size.width * (880f - 800f * fraction) / 960f) { this@drawWithContent.drawContent() }
+        }, tint = color)
+        if (charging) {
+            Icon(painterResource(R.drawable.ic_rounded_bolt), contentDescription = null, modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.surface)
         }
     }
 }
