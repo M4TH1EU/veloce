@@ -12,19 +12,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 
-data class CatalogState(
-    val apps: List<CarApp> = emptyList(),
-    val loading: Boolean = true,
-    val failed: Boolean = false,
-)
-
 class HomeModel(application: Application) : AndroidViewModel(application) {
     private val catalog = CarApps(application)
-    private val catalogState = MutableStateFlow(CatalogState())
-    val state = catalogState.asStateFlow()
-    val media = (application as VeloceApplication).media
-    val connections = (application as VeloceApplication).connections
-    val wirelessAuto = (application as VeloceApplication).wirelessAuto
+    private val catalogApps = MutableStateFlow<List<CarApp>>(emptyList())
+    val apps = catalogApps.asStateFlow()
+    private val app = application as VeloceApplication
+    val media = app.media
+    val connections = app.connections
+    val wirelessAuto = app.wirelessAuto
     private var refreshJob: Job? = null
     private var identityJob: Job? = null
 
@@ -36,13 +31,12 @@ class HomeModel(application: Application) : AndroidViewModel(application) {
     fun refresh() {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
-            catalogState.value = catalogState.value.copy(loading = true, failed = false)
             try {
-                catalogState.value = CatalogState(catalog.discover(), loading = false)
+                catalogApps.value = catalog.discover()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                catalogState.value = catalogState.value.copy(loading = false, failed = true)
+            } catch (failure: Exception) {
+                connections.log("App discovery failed: ${failure.message}")
             }
         }
     }

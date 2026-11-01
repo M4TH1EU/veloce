@@ -1,6 +1,7 @@
 package ch.broillet.veloce.lyrics
 
 import android.util.AtomicFile
+import android.util.LruCache
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -9,9 +10,7 @@ import java.security.MessageDigest
 internal data class CachedLyrics(val document: LyricsDocument, val checkedAt: Long)
 
 internal class LyricsCache(private val directory: File) {
-    private val memory = object : LinkedHashMap<String, CachedLyrics>(32, .75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedLyrics>?) = size > 64
-    }
+    private val memory = LruCache<String, CachedLyrics>(64)
 
     @Synchronized fun read(key: String): CachedLyrics? {
         memory[key]?.let { return it }
@@ -33,7 +32,7 @@ internal class LyricsCache(private val directory: File) {
                     }.filter { it.startMs >= 0 && it.endMs >= it.startMs && it.from >= 0 && it.until > it.from && it.until <= text.length })
             }
             CachedLyrics(LyricsDocument(lines, json.getString("source"), json.optBoolean("instrumental")), json.getLong("checked"))
-                .also { memory[key] = it }
+                .also { memory.put(key, it) }
         }.getOrNull()
     }
 
@@ -41,7 +40,7 @@ internal class LyricsCache(private val directory: File) {
         val previous = read(key)
         val stored = if (!replace && previous != null && previous.document.quality > value.document.quality)
             CachedLyrics(previous.document, maxOf(previous.checkedAt, value.checkedAt)) else value
-        memory[key] = stored
+        memory.put(key, stored)
         runCatching {
             check(directory.isDirectory || directory.mkdirs())
             val rows = JSONArray()

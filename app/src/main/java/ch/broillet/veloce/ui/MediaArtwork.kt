@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.util.LruCache
 import androidx.compose.foundation.Image
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -37,7 +37,7 @@ private val artworkCache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
     override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
 }
 
-internal fun artworkCacheKey(artwork: MediaArtwork?): String? = artwork?.uri?.toString()
+private fun artworkCacheKey(artwork: MediaArtwork?): String? = artwork?.uri?.toString()
     ?: artwork?.data?.let { "data:${it.size}:${it.contentHashCode()}" }
     ?: artwork?.bitmap?.let { artwork.cacheKey ?: "bitmap:${it.generationId}" }
 
@@ -102,24 +102,8 @@ internal fun ArtworkImage(bitmap: Bitmap?, modifier: Modifier) {
 
 @Composable
 internal fun ArtworkTransition(bitmap: Bitmap?, modifier: Modifier, content: @Composable (Bitmap?, Modifier) -> Unit) {
-    var current by remember { mutableStateOf(bitmap) }
-    var previous by remember { mutableStateOf<Bitmap?>(null) }
-    var transitioning by remember { mutableStateOf(false) }
-    val progress = remember { Animatable(1f) }
-    LaunchedEffect(bitmap) {
-        if (current === bitmap) return@LaunchedEffect
-        previous = current
-        current = bitmap
-        transitioning = true
-        progress.snapTo(0f)
-        progress.animateTo(1f, tween(450))
-        previous = null
-        transitioning = false
-    }
-    Box(modifier) {
-        val surface = MaterialTheme.colorScheme.surface
-        if (transitioning) Box(Modifier.fillMaxSize().background(surface)) { content(previous, Modifier.fillMaxSize()) }
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = progress.value }.background(surface)) { content(current, Modifier.fillMaxSize()) }
+    Crossfade(bitmap, modifier.background(MaterialTheme.colorScheme.surface), tween(450), label = "Artwork") { art ->
+        content(art, Modifier.fillMaxSize())
     }
 }
 

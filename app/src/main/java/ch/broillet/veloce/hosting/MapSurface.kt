@@ -13,33 +13,42 @@ import androidx.car.app.SurfaceContainer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
+internal class MapScene {
+    var visibleInsets by mutableStateOf(PaddingValues(0.dp))
+    var stableInsets by mutableStateOf(PaddingValues(0.dp))
+    var panStart: () -> Unit = {}
+    var panEnd: () -> Unit = {}
+}
+
 @Composable
 internal fun MapSurface(host: CarAppHost, modifier: Modifier, visibleInsets: PaddingValues = PaddingValues(0.dp),
     stableInsets: PaddingValues = visibleInsets, onPanStart: () -> Unit = {}, onPanEnd: () -> Unit = {},
     blurred: Boolean = false, interactive: Boolean = true) {
     val direction = LocalLayoutDirection.current
-    val insets = with(LocalDensity.current) {
-        Rect(visibleInsets.calculateLeftPadding(direction).roundToPx(), visibleInsets.calculateTopPadding().roundToPx(),
-            visibleInsets.calculateRightPadding(direction).roundToPx(), visibleInsets.calculateBottomPadding().roundToPx())
+    val density = LocalDensity.current
+    fun PaddingValues.pixels() = with(density) {
+        Rect(calculateLeftPadding(direction).roundToPx(), calculateTopPadding().roundToPx(),
+            calculateRightPadding(direction).roundToPx(), calculateBottomPadding().roundToPx())
     }
-    val stable = with(LocalDensity.current) {
-        Rect(stableInsets.calculateLeftPadding(direction).roundToPx(), stableInsets.calculateTopPadding().roundToPx(),
-            stableInsets.calculateRightPadding(direction).roundToPx(), stableInsets.calculateBottomPadding().roundToPx())
-    }
-    val beginPan by androidx.compose.runtime.rememberUpdatedState(onPanStart)
-    val endPan by androidx.compose.runtime.rememberUpdatedState(onPanEnd)
-    val blurRadius = with(LocalDensity.current) { 28.dp.toPx() }
+    val insets = visibleInsets.pixels()
+    val stable = stableInsets.pixels()
+    val beginPan by rememberUpdatedState(onPanStart)
+    val endPan by rememberUpdatedState(onPanEnd)
+    val blurRadius = with(density) { 28.dp.toPx() }
     AndroidView(modifier = modifier, factory = { context ->
         object : TextureView(context), TextureView.SurfaceTextureListener {
             private var target: SurfaceContainer? = null
-            private var contentInsets = Rect()
-            private var stableContentInsets = Rect()
+            private val contentInsets = Rect()
+            private val stableContentInsets = Rect()
             private var dragging = false
             private var blurred = false
             private var interactive = true
@@ -52,8 +61,8 @@ internal fun MapSurface(host: CarAppHost, modifier: Modifier, visibleInsets: Pad
             }
             fun updateInsets(insets: Rect, stable: Rect) {
                 if (contentInsets == insets && stableContentInsets == stable) return
-                contentInsets = Rect(insets)
-                stableContentInsets = Rect(stable)
+                contentInsets.set(insets)
+                stableContentInsets.set(stable)
                 publishArea(width, height)
             }
             private fun publishArea(width: Int, height: Int) {

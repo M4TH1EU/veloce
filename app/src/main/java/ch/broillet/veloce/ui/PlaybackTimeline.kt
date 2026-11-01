@@ -31,17 +31,21 @@ import java.util.Locale
 
 private data class PendingSeek(val positionMs: Long, val requestedAtMs: Long)
 
+@Composable
+internal fun rememberPlaybackPosition(track: NowPlaying?, intervalMs: Long = 250): State<Long> =
+    produceState(track?.positionAt(SystemClock.elapsedRealtime()) ?: 0, track, intervalMs) {
+        while (true) {
+            value = track?.positionAt(SystemClock.elapsedRealtime()) ?: 0
+            if (track?.advancing != true) break
+            delay(intervalMs)
+        }
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlaybackTimeline(track: NowPlaying, seekTo: (Long) -> Boolean, compact: Boolean = false) {
     if (track.durationMs <= 0 || track.positionMs < 0) return
-    val position by produceState(track.positionAt(SystemClock.elapsedRealtime()), track) {
-        while (true) {
-            value = track.positionAt(SystemClock.elapsedRealtime())
-            if (!track.advancing) break
-            delay(250)
-        }
-    }
+    val position by rememberPlaybackPosition(track)
     var dragged by remember(track.packageName, track.title, track.durationMs) { mutableStateOf<Float?>(null) }
     var pending by remember(track.packageName, track.title, track.durationMs) { mutableStateOf<PendingSeek?>(null) }
     LaunchedEffect(track.positionMs, track.updatedAtMs) {
@@ -53,7 +57,7 @@ internal fun PlaybackTimeline(track: NowPlaying, seekTo: (Long) -> Boolean, comp
     val displayed = (dragged?.let { (it.toDouble() * track.durationMs).toLong() } ?: pending?.positionMs ?: position)
         .coerceIn(0, track.durationMs)
     val progress = displayed.toFloat() / track.durationMs
-    val canSeek = track.actions and PlaybackState.ACTION_SEEK_TO != 0L
+    val canSeek = track.supports(PlaybackState.ACTION_SEEK_TO)
     val interactions = remember { MutableInteractionSource() }
     val accent = MaterialTheme.colorScheme.primary
     val colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = .2f))

@@ -145,7 +145,5 @@ class LyricsTest {
         assertEquals(replacement, repository.lyrics(track, refresh = true).toList().last().document)
     }
 
-    private fun provider(find: suspend () -> LyricsDocument?): LyricsProvider = object : LyricsProvider {
-        override suspend fun find(track: LyricsTrack) = find()
-    }
+    private fun provider(find: suspend () -> LyricsDocument?) = LyricsProvider { find() }
 }

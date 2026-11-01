@@ -43,7 +43,6 @@ import ch.broillet.veloce.ui.GlassIconButton
 import ch.broillet.veloce.ui.CarSymbol
 import ch.broillet.veloce.ui.CarGlyph
 import ch.broillet.veloce.ui.CarTextButton
-import ch.broillet.veloce.ui.CarSearchField
 import ch.broillet.veloce.ui.LocalGlassOpacity
 import ch.broillet.veloce.ui.carEntrance
 import ch.broillet.veloce.ui.HostNotice
@@ -58,18 +57,18 @@ internal fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifie
     val configuration = android.content.res.Configuration(LocalConfiguration.current)
     LaunchedEffect(host, configuration) { host.updateConfiguration(configuration) }
     CompositionLocalProvider(LocalGlassOpacity provides .96f) {
-        Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(modifier) {
             val failure = host.error
             val template = host.template
             when {
-                failure != null -> Column(Modifier.weight(1f).padding(mapInsets).padding(16.dp), verticalArrangement = Arrangement.Center) {
+                failure != null -> Column(Modifier.fillMaxSize().padding(mapInsets).padding(16.dp), verticalArrangement = Arrangement.Center) {
                     Text("Could not open ${host.app.label}", style = MaterialTheme.typography.titleLarge)
                     Text(failure, maxLines = 5, overflow = TextOverflow.Ellipsis)
                     Text("Check the app’s host-validation patch and Car App Library compatibility. Details are in the connection log.")
                     CarTextButton("Home", home)
                 }
-                template == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> TemplateContent(template, host, Modifier.fillMaxWidth().weight(1f), mapInsets, !headerInToolbar, bottomOverlay, mapScene)
+                template == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                else -> TemplateContent(template, host, Modifier.fillMaxSize(), mapInsets, !headerInToolbar, bottomOverlay, mapScene)
             }
         }
         host.alert?.let { alert ->
@@ -197,80 +196,42 @@ internal fun Template?.hasMapSurface(): Boolean = when (this) {
 @Composable
 @androidx.annotation.OptIn(androidx.car.app.annotations.ExperimentalCarApi::class)
 private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: Modifier, insets: PaddingValues, bottomOverlay: Dp, mapScene: MapScene?) {
-    var content: Template? = null
-    var actions: ActionStrip? = null
-    var mapActions: ActionStrip? = null
-    var pan: PanModeDelegate? = null
-    var toggle: Toggle? = null
-    var information: @Composable () -> Unit = {}
-    var travel: (@Composable () -> Unit)? = null
-    var panel: (@Composable () -> Unit)? = null
-    when (template) {
-        is NavigationTemplate -> {
-            actions = template.actionStrip
-            mapActions = template.mapActionStrip
-            pan = template.panModeDelegate
-            toggle = template.panModeToggle
-            information = { NavigationInfo(template, host) }
-            travel = template.destinationTravelEstimate?.let { estimate -> ({ TravelInfo(estimate) }) }
-        }
-        is MapWithContentTemplate -> {
-            content = template.contentTemplate
-            actions = template.actionStrip
-            mapActions = template.mapController?.mapActionStrip
-            pan = template.mapController?.panModeDelegate
-        }
-        is MapTemplate -> {
-            actions = template.actionStrip
-            mapActions = template.mapController?.mapActionStrip
-            pan = template.mapController?.panModeDelegate
-            panel = { Column(Modifier.fillMaxSize()) {
-                TemplateHeader(template.header, null, null, host)
-                template.pane?.let { PaneContent(it, host, Modifier.weight(1f), template.header?.endHeaderActions.orEmpty()) }
-                template.itemList?.let { ItemListContent(it, host, Modifier.weight(1f)) }
-            } }
-        }
-        is PlaceListNavigationTemplate -> {
-            actions = template.actionStrip
-            mapActions = template.mapActionStrip
-            pan = template.panModeDelegate
-            panel = { Column(Modifier.fillMaxSize()) {
-                TemplateHeader(template.header, template.title, template.headerAction, host)
-                Loading(template.isLoading)
-                template.onContentRefreshDelegate?.let { delegate ->
-                    CarTextButton("Refresh", { host.event { delegate.sendContentRefreshRequested(it) } })
-                }
-                ItemListContent(template.itemList, host, Modifier.weight(1f))
-            } }
-        }
-        is RoutePreviewNavigationTemplate -> {
-            actions = template.actionStrip
-            mapActions = template.mapActionStrip
-            pan = template.panModeDelegate
-            panel = { Column(Modifier.fillMaxSize()) {
-                TemplateHeader(template.header, template.title, template.headerAction, host)
-                Loading(template.isLoading)
-                ItemListContent(template.itemList, host, Modifier.weight(1f))
-                template.navigateAction?.let { ActionButton(it, host) }
-            } }
-        }
+    val navigation = template as? NavigationTemplate
+    val content = (template as? MapWithContentTemplate)?.contentTemplate
+    val controller = when (template) {
+        is MapWithContentTemplate -> template.mapController
+        is MapTemplate -> template.mapController
+        else -> null
     }
-    // A single call site preserves the map surface when the app changes map templates.
-    MapLayout(host, modifier, insets, content, actions, mapActions, pan, toggle, information, panel, travel, bottomOverlay, mapScene)
-}
-
-@Composable
-private fun MapLayout(host: CarAppHost, modifier: Modifier, insets: PaddingValues, content: Template? = null, actions: ActionStrip? = null,
-    mapActions: ActionStrip? = null, pan: PanModeDelegate? = null, panToggle: Toggle? = null,
-    information: @Composable () -> Unit = {}, panel: (@Composable () -> Unit)? = null, travel: (@Composable () -> Unit)? = null,
-    bottomOverlay: Dp = 0.dp, scene: MapScene? = null) {
+    val actions = when (template) {
+        is NavigationTemplate -> template.actionStrip
+        is MapWithContentTemplate -> template.actionStrip
+        is MapTemplate -> template.actionStrip
+        is PlaceListNavigationTemplate -> template.actionStrip
+        is RoutePreviewNavigationTemplate -> template.actionStrip
+        else -> null
+    }?.actions.orEmpty()
+    val mapActions = when (template) {
+        is NavigationTemplate -> template.mapActionStrip
+        is PlaceListNavigationTemplate -> template.mapActionStrip
+        is RoutePreviewNavigationTemplate -> template.mapActionStrip
+        else -> controller?.mapActionStrip
+    }?.actions.orEmpty()
+    val pan = when (template) {
+        is NavigationTemplate -> template.panModeDelegate
+        is PlaceListNavigationTemplate -> template.panModeDelegate
+        is RoutePreviewNavigationTemplate -> template.panModeDelegate
+        else -> controller?.panModeDelegate
+    }
+    val panToggle = navigation?.panModeToggle
+    val travel = navigation?.destinationTravelEstimate
     var panning by remember { mutableStateOf(false) }
     var touching by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
-    val primary = actions?.actions.orEmpty().filter { it.type != Action.TYPE_PAN }.distinct()
-    val mapButtons = mapActions?.actions.orEmpty().filter { it.type != Action.TYPE_PAN && it !in primary }.distinct()
-    val hasPan = (actions?.actions.orEmpty() + mapActions?.actions.orEmpty()).any { it.type == Action.TYPE_PAN }
+    val primary = actions.filter { it.type != Action.TYPE_PAN }.distinct()
+    val mapButtons = mapActions.filter { it.type != Action.TYPE_PAN && it !in primary }.distinct()
+    val hasPan = (actions + mapActions).any { it.type == Action.TYPE_PAN }
     val setPanning: (Boolean) -> Unit = { enabled ->
         if (panning != enabled) {
             panning = enabled
@@ -278,16 +239,17 @@ private fun MapLayout(host: CarAppHost, modifier: Modifier, insets: PaddingValue
             else pan?.let { delegate -> host.event { delegate.sendPanModeChanged(enabled, it) } }
         }
     }
-    LaunchedEffect(panning, touching) {
-        if (panning && !touching) { delay(8_000); setPanning(false) }
-    }
     val finishPan by rememberUpdatedState { setPanning(false) }
-    DisposableEffect(host, scene) { onDispose {
+    LaunchedEffect(panning, touching) {
+        if (panning && !touching) { delay(8_000); finishPan() }
+    }
+    DisposableEffect(host, mapScene) { onDispose {
         finishPan()
-        scene?.panStart = {}
-        scene?.panEnd = {}
+        mapScene?.panStart = {}
+        mapScene?.panEnd = {}
     } }
-    var topHeight by remember { mutableStateOf(0.dp) }
+    val noticeSpace = if (host.notice != null) 76.dp else 0.dp
+    val topHeight = noticeSpace + if (primary.isNotEmpty()) 64.dp else 0.dp
     var infoWidth by remember { mutableStateOf(0.dp) }
     var travelWidth by remember { mutableStateOf(0.dp) }
     BoxWithConstraints(modifier) {
@@ -295,81 +257,92 @@ private fun MapLayout(host: CarAppHost, modifier: Modifier, insets: PaddingValue
         val end = insets.calculateEndPadding(direction)
         val availableWidth = (maxWidth - start - end).coerceAtLeast(0.dp)
         val navigationWidth = minOf(360.dp, availableWidth * .56f)
-        val actionWidth = if (host.template is NavigationTemplate) minOf(320.dp, (availableWidth - navigationWidth - 12.dp).coerceAtLeast(64.dp))
+        val actionWidth = if (navigation != null) minOf(320.dp, (availableWidth - navigationWidth - 12.dp).coerceAtLeast(64.dp))
             else minOf(maxWidth * .5f, 320.dp)
-        val panelWidth = if (content != null || panel != null) minOf(availableWidth * .42f, 340.dp) else 0.dp
+        val panelWidth = if (navigation == null) minOf(availableWidth * .42f, 340.dp) else 0.dp
         val panelStart = start + if (panelWidth > 0.dp) panelWidth + 12.dp else 0.dp
-        val sideWidth = if (host.template is NavigationTemplate) maxOf(infoWidth, if (travel != null) travelWidth else 0.dp) else 0.dp
+        val sideWidth = if (navigation != null) maxOf(infoWidth, if (travel != null) travelWidth else 0.dp) else 0.dp
         val visibleInsets = PaddingValues(
             start = panelStart + if (sideWidth > 0.dp) sideWidth + 12.dp else 0.dp,
             top = insets.calculateTopPadding() + topHeight,
             end = end + if (mapButtons.isNotEmpty()) 80.dp else 0.dp,
             bottom = insets.calculateBottomPadding() + bottomOverlay,
         )
-        val stableStart = if (host.template is NavigationTemplate) maxOf(visibleInsets.calculateStartPadding(direction), start + navigationWidth + 12.dp)
+        val stableStart = if (navigation != null) maxOf(visibleInsets.calculateStartPadding(direction), start + navigationWidth + 12.dp)
             else visibleInsets.calculateStartPadding(direction)
         val stableInsets = PaddingValues(start = stableStart, top = insets.calculateTopPadding() + maxOf(topHeight, 64.dp),
             end = end + 80.dp, bottom = insets.calculateBottomPadding() + bottomOverlay)
         val startPan = { touching = true; if (hasPan && panToggle?.isEnabled != false) setPanning(true) }
         val endPan = { touching = false }
-        if (scene == null) MapSurface(host, Modifier.fillMaxSize(), visibleInsets, stableInsets, startPan, endPan)
+        if (mapScene == null) MapSurface(host, Modifier.fillMaxSize(), visibleInsets, stableInsets, startPan, endPan)
         else SideEffect {
-            scene.visibleInsets = visibleInsets
-            scene.stableInsets = stableInsets
-            scene.panStart = startPan
-            scene.panEnd = endPan
+            mapScene.visibleInsets = visibleInsets
+            mapScene.stableInsets = stableInsets
+            mapScene.panStart = startPan
+            mapScene.panEnd = endPan
         }
-        Row(Modifier.fillMaxSize().padding(insets).carEntrance(content?.javaClass ?: host.template?.javaClass),
+        Row(Modifier.fillMaxSize().padding(insets).carEntrance(content?.javaClass ?: template.javaClass),
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (panelWidth > 0.dp) GlassSurface(Modifier.width(panelWidth).padding(bottom = bottomOverlay).fillMaxHeight(), RoundedCornerShape(28.dp)) {
                 Box(Modifier.padding(8.dp)) {
-                    if (content != null) TemplateContent(content, host, Modifier.fillMaxSize()) else panel?.invoke()
+                    MapPanel(template, host)
                 }
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 Row(Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                     Box(Modifier.weight(1f)) {
-                        Box(Modifier.widthIn(max = navigationWidth).onSizeChanged { infoWidth = with(density) { it.width.toDp() } }) { information() }
+                        Box(Modifier.widthIn(max = navigationWidth).onSizeChanged { infoWidth = with(density) { it.width.toDp() } }) {
+                            if (navigation != null) NavigationInfo(navigation, host)
+                        }
                     }
-                    val noticeSpace = if (host.notice != null) 76.dp else 0.dp
                     val actionOffset by animateDpAsState(noticeSpace, tween(220), label = "Map notice space")
-                    Box(Modifier.widthIn(max = actionWidth).height(noticeSpace + if (primary.isNotEmpty()) 64.dp else 0.dp)
-                        .onSizeChanged { topHeight = with(density) { it.height.toDp() } }) {
+                    Box(Modifier.widthIn(max = actionWidth).height(topHeight)) {
                         host.notice?.let { message ->
                             HostNotice(message, host::dismissNotice, Modifier.fillMaxWidth().carEntrance(message))
                         }
                         Row(Modifier.align(Alignment.TopEnd).graphicsLayer { translationY = actionOffset.toPx() }
                             .horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            primary.forEach { MapActionButton(it, host) }
+                            primary.forEach { ActionButton(it, host, compact = true) }
                         }
                     }
                 }
                 Column(Modifier.align(Alignment.BottomEnd).padding(top = topHeight + 12.dp)
                     .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    mapButtons.forEach { MapActionButton(it, host) }
+                    mapButtons.forEach { ActionButton(it, host, compact = true) }
                 }
                 if (travel != null) Box(Modifier.align(Alignment.BottomStart).padding(bottom = bottomOverlay).widthIn(max = 340.dp)
-                    .onSizeChanged { travelWidth = with(density) { it.width.toDp() } }) { travel() }
+                    .onSizeChanged { travelWidth = with(density) { it.width.toDp() } }) { TravelInfo(travel) }
             }
         }
     }
 }
 
 @Composable
-private fun MapActionButton(action: Action, host: CarAppHost) {
-    if (action.type == Action.TYPE_BACK) {
-        GlassIconButton(CarSymbol.Back, "Back", { host.click(action) }, enabled = action.isEnabled, opacity = .78f)
-        return
-    }
-    val title = action.title.text()
-    GlassSurface(onClick = { host.click(action) }, enabled = action.isEnabled, shape = RoundedCornerShape(22.dp), opacity = .78f,
-        modifier = Modifier.heightIn(min = 64.dp).widthIn(min = 64.dp).semantics {
-            if (title.isNotBlank()) contentDescription = title
-        }) {
-        Row(Modifier.padding(if (title.isEmpty()) 12.dp else 16.dp).align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            ActionLabel(action, host)
+@androidx.annotation.OptIn(androidx.car.app.annotations.ExperimentalCarApi::class)
+private fun MapPanel(template: Template, host: CarAppHost) {
+    Column(Modifier.fillMaxSize()) {
+        when (template) {
+            is MapWithContentTemplate -> TemplateContent(template.contentTemplate, host, Modifier.fillMaxSize())
+            is MapTemplate -> {
+                TemplateHeader(template.header, null, null, host)
+                template.pane?.let { PaneContent(it, host, Modifier.weight(1f), template.header?.endHeaderActions.orEmpty()) }
+                template.itemList?.let { ItemListContent(it, host, Modifier.weight(1f)) }
+            }
+            is PlaceListNavigationTemplate -> {
+                TemplateHeader(template.header, template.title, template.headerAction, host)
+                Loading(template.isLoading)
+                template.onContentRefreshDelegate?.let { delegate ->
+                    CarTextButton("Refresh", { host.event { delegate.sendContentRefreshRequested(it) } })
+                }
+                ItemListContent(template.itemList, host, Modifier.weight(1f))
+            }
+            is RoutePreviewNavigationTemplate -> {
+                TemplateHeader(template.header, template.title, template.headerAction, host)
+                Loading(template.isLoading)
+                ItemListContent(template.itemList, host, Modifier.weight(1f))
+                template.navigateAction?.let { ActionButton(it, host) }
+            }
         }
     }
 }
@@ -421,8 +394,7 @@ private fun TravelInfo(estimate: TravelEstimate) {
 @Composable
 private fun TemplateHeader(header: Header?, title: CarText?, action: Action?, host: CarAppHost) {
     val label = header?.title ?: title
-    val start = header?.startHeaderAction ?: action
-    val leading = start
+    val leading = header?.startHeaderAction ?: action
     if (label == null && leading == null && header?.endHeaderActions.isNullOrEmpty()) return
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -467,7 +439,13 @@ private fun ListItemContent(item: Item, list: ItemList?, index: Int, host: CarAp
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
             item.toggle?.let { toggle ->
-                key(host.template.pageTitle(), item.title.text()) { HostedToggle(toggle, host) }
+                key(host.template.pageTitle(), item.title.text()) {
+                    var checked by remember(toggle.isChecked) { mutableStateOf(toggle.isChecked) }
+                    Switch(checked, { value ->
+                        checked = value
+                        host.event { toggle.onCheckedChangeDelegate.sendCheckedChange(value, it) }
+                    }, enabled = toggle.isEnabled)
+                }
             }
             item.actions.forEach { ActionButton(it, host) }
         }
@@ -488,16 +466,10 @@ private fun PaneContent(pane: Pane, host: CarAppHost, modifier: Modifier, header
 
 @Composable
 private fun SearchContent(template: SearchTemplate, host: CarAppHost, modifier: Modifier, showToolbar: Boolean) {
-    var text by remember(template.initialSearchText) { mutableStateOf(template.initialSearchText.orEmpty()) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        val search = { host.event { template.searchCallbackDelegate.sendSearchSubmitted(text, it) } }
         if (showToolbar) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             template.headerAction?.let { ActionButton(it, host) }
-            CarSearchField(text, { value ->
-                text = value
-                host.event { template.searchCallbackDelegate.sendSearchTextChanged(value, it) }
-            }, template.searchHint ?: "Search", search, Modifier.weight(1f))
-            GlassIconButton(CarSymbol.Search, "Search", search)
+            HostedSearch(template, host)
         }
         Loading(template.isLoading)
         ItemListContent(template.itemList, host, Modifier.weight(1f))
@@ -514,15 +486,21 @@ private fun Actions(actions: List<Action>, host: CarAppHost) {
 }
 
 @Composable
-internal fun ActionButton(action: Action, host: CarAppHost, onClick: (() -> Unit)? = null) {
+internal fun ActionButton(action: Action, host: CarAppHost, compact: Boolean = false, onClick: (() -> Unit)? = null) {
+    val click = onClick ?: { host.click(action) }
+    val opacity = if (compact) .78f else LocalGlassOpacity.current
     if (action.type == Action.TYPE_BACK) {
-        GlassIconButton(CarSymbol.Back, "Back", onClick ?: { host.click(action) }, enabled = action.isEnabled)
+        GlassIconButton(CarSymbol.Back, "Back", click, enabled = action.isEnabled, opacity = opacity)
         return
     }
-    GlassSurface(onClick = onClick ?: { host.click(action) }, enabled = action.isEnabled,
-        modifier = Modifier.heightIn(min = 64.dp).widthIn(min = 64.dp), shape = RoundedCornerShape(24.dp)) {
-        Row(Modifier.align(Alignment.Center).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) { ActionLabel(action, host) }
+    val title = action.title.text()
+    GlassSurface(onClick = click, enabled = action.isEnabled, opacity = opacity,
+        modifier = Modifier.heightIn(min = 64.dp).widthIn(min = 64.dp).semantics {
+            if (title.isNotBlank()) contentDescription = title
+        }, shape = RoundedCornerShape(if (compact) 22.dp else 24.dp)) {
+        Row(Modifier.align(Alignment.Center).padding(horizontal = if (compact && title.isEmpty()) 12.dp else 16.dp,
+            vertical = if (compact && title.isNotEmpty()) 16.dp else 12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) { ActionLabel(action, host) }
     }
 }
 
@@ -536,7 +514,7 @@ private fun ActionLabel(action: Action, host: CarAppHost) {
 }
 
 @Composable
-private fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modifier.size(32.dp)) {
+private fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modifier) {
     if (icon == null) return
     val context = LocalContext.current
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, icon) {
@@ -560,7 +538,7 @@ private fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modi
             else -> MaterialTheme.colorScheme.onSurface
         }
     }
-    bitmap?.let { Image(it, contentDescription = null, modifier = modifier, colorFilter = tint?.let(ColorFilter::tint)) }
+    bitmap?.let { Image(it, contentDescription = null, modifier = modifier.size(32.dp), colorFilter = tint?.let(ColorFilter::tint)) }
         ?: when (icon.type) {
             CarIcon.TYPE_BACK -> Text("←")
             CarIcon.TYPE_ALERT -> Text("!")

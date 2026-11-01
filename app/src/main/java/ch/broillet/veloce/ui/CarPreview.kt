@@ -86,8 +86,8 @@ private fun PreviewSurface(model: HomeModel, spec: ScreenSpec, modifier: Modifie
                             texture.setDefaultBufferSize(spec.width, spec.height)
                             val target = Surface(texture).also { surface = it }
                             projected = ProjectedWindow(context, target, spec, { navigation.back(close) }, navigation::home, buttons) {
-                                val catalog by model.state.collectAsStateWithLifecycle()
-                                VeloceTheme { CarLauncher(spec, catalog.apps, navigation, model.media, close) }
+                                val apps by model.apps.collectAsStateWithLifecycle()
+                                CarLauncher(spec, apps, navigation, model.media, close)
                             }
                         } catch (failure: Exception) {
                             release()

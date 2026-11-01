@@ -37,16 +37,19 @@ internal fun Template?.pageTitle(): String = when (this) {
 @Composable
 internal fun RowScope.HostedToolbarActions(host: CarAppHost) {
     val template = host.template
-    if (template is SearchTemplate) {
-        var query by remember(host, template.initialSearchText) { mutableStateOf(template.initialSearchText.orEmpty()) }
-        val search = { host.event { template.searchCallbackDelegate.sendSearchSubmitted(query, it) } }
-        CarSearchField(query, { value ->
-            query = value
-            host.event { template.searchCallbackDelegate.sendSearchTextChanged(value, it) }
-        }, template.searchHint ?: stringResource(R.string.search), search, Modifier.weight(1f))
-        GlassIconButton(CarSymbol.Search, stringResource(R.string.search), search)
-    }
+    if (template is SearchTemplate) HostedSearch(template, host)
     val header = template.pageHeader()
     header?.startHeaderAction?.takeUnless { it.type == Action.TYPE_BACK || it.type == Action.TYPE_APP_ICON }?.let { ActionButton(it, host) }
     header?.endHeaderActions?.forEach { ActionButton(it, host) }
+}
+
+@Composable
+internal fun RowScope.HostedSearch(template: SearchTemplate, host: CarAppHost) {
+    var query by remember(host, template.initialSearchText) { mutableStateOf(template.initialSearchText.orEmpty()) }
+    val search = { host.event { template.searchCallbackDelegate.sendSearchSubmitted(query, it) } }
+    CarSearchField(query, { value ->
+        query = value
+        host.event { template.searchCallbackDelegate.sendSearchTextChanged(value, it) }
+    }, template.searchHint ?: stringResource(R.string.search), search, Modifier.weight(1f))
+    GlassIconButton(CarSymbol.Search, stringResource(R.string.search), search)
 }

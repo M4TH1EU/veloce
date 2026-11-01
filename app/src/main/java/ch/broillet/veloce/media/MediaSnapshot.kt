@@ -5,7 +5,7 @@ import android.media.session.MediaController
 import android.media.session.PlaybackState
 import android.net.Uri
 
-internal fun artworkIdentity(packageName: String, album: String?, artist: String?, mediaId: String?, title: String?): String =
+private fun artworkIdentity(packageName: String, album: String?, artist: String?, mediaId: String?, title: String?): String =
     if (!album.isNullOrBlank()) "$packageName:album:$album:$artist" else "$packageName:track:${mediaId ?: title}:$artist"
 
 internal fun platformNowPlaying(controller: MediaController): NowPlaying {

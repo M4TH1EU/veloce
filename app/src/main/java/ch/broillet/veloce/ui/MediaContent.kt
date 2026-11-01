@@ -64,16 +64,8 @@ fun MediaPlayer(track: NowPlaying?, control: (Long) -> Boolean, modifier: Modifi
                     Box(Modifier.fillMaxWidth().height(if (compact) 64.dp else 68.dp)) {
                         PlaybackTimeline(it, { position -> seekTo(position).also { success -> failed = !success } }, compact)
                     }
-                    val playPause = if (it.playing) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
-                    val toggle = if (it.actions and playPause != 0L) playPause else PlaybackState.ACTION_PLAY_PAUSE
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally)) {
-                        GlassIconButton(CarSymbol.Previous, stringResource(R.string.previous),
-                            { failed = !control(PlaybackState.ACTION_SKIP_TO_PREVIOUS) }, enabled = it.actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
-                        GlassIconButton(if (it.playing) CarSymbol.Pause else CarSymbol.Play,
-                            stringResource(if (it.playing) R.string.pause else R.string.play), { failed = !control(toggle) },
-                            selected = true, enabled = it.actions and toggle != 0L, size = if (compact) 76.dp else 88.dp, iconSize = 38.dp)
-                        GlassIconButton(CarSymbol.Next, stringResource(R.string.next),
-                            { failed = !control(PlaybackState.ACTION_SKIP_TO_NEXT) }, enabled = it.actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+                        PlaybackControls(it, { failed = !control(it) }, playSize = if (compact) 76.dp else 88.dp)
                     }
                     Box(Modifier.fillMaxWidth().height(if (compact) 56.dp else 64.dp)) {
                         PlayerSecondaryControls(it, { failed = !control(it) }, { failed = !customAction(it) }, { failed = !setSpeed(it) },
@@ -94,10 +86,29 @@ fun MediaPlayer(track: NowPlaying?, control: (Long) -> Boolean, modifier: Modifi
 }
 
 @Composable
+internal fun PlaybackControls(track: NowPlaying?, control: (Long) -> Unit, size: Dp = 64.dp, playSize: Dp = size,
+    plain: Boolean = false) {
+    @Composable fun Button(symbol: CarSymbol, label: Int, action: Long, primary: Boolean = false) {
+        val enabled = track?.supports(action) == true
+        val description = stringResource(label)
+        val iconSize = if (primary && playSize > size) 38.dp else if (size < 64.dp) 24.dp else 30.dp
+        if (plain) IconButton({ control(action) }, Modifier.size(size), enabled = enabled) {
+            CarGlyph(symbol, Modifier.size(iconSize).semantics { contentDescription = description },
+                MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .3f))
+        } else GlassIconButton(symbol, description, { control(action) }, enabled = enabled,
+            selected = primary && playSize > size, size = if (primary) playSize else size, iconSize = iconSize)
+    }
+    Button(CarSymbol.Previous, R.string.previous_track, PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+    Button(if (track?.playing == true) CarSymbol.Pause else CarSymbol.Play,
+        if (track?.playing == true) R.string.pause else R.string.play, track?.toggleAction ?: PlaybackState.ACTION_PLAY_PAUSE, primary = true)
+    Button(CarSymbol.Next, R.string.next_track, PlaybackState.ACTION_SKIP_TO_NEXT)
+}
+
+@Composable
 private fun PlayerSecondaryControls(track: NowPlaying, control: (Long) -> Unit, customAction: (String) -> Unit, setSpeed: (Float) -> Unit, size: Dp) {
-    val rewind = track.actions and PlaybackState.ACTION_REWIND != 0L
-    val forward = track.actions and PlaybackState.ACTION_FAST_FORWARD != 0L
-    val speed = track.actions and PlaybackState.ACTION_SET_PLAYBACK_SPEED != 0L
+    val rewind = track.supports(PlaybackState.ACTION_REWIND)
+    val forward = track.supports(PlaybackState.ACTION_FAST_FORWARD)
+    val speed = track.supports(PlaybackState.ACTION_SET_PLAYBACK_SPEED)
     if (!rewind && !forward && !speed && track.customActions.isEmpty()) return
     var speedPicker by remember(track.packageName) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {

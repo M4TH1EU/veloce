@@ -11,6 +11,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 internal object LyricsParsers {
     private val lineStamp = Regex("\\[(\\d+):(\\d{1,2}(?:\\.\\d+)?)\\]")
     private val wordStamp = Regex("<(\\d+):(\\d{1,2}(?:\\.\\d+)?)>")
+    private val offsetStamp = Regex("(?i)\\[offset:([+-]?\\d+)]")
     private val whitespace = Regex("[\\t\\r\\n ]+")
     private val ignoredRoles = setOf("x-bg", "x-translation", "x-roman")
 
@@ -26,7 +27,7 @@ internal object LyricsParsers {
     }
 
     fun lrc(raw: String, source: String, durationMs: Long = 0): LyricsDocument? {
-        val offset = Regex("(?i)\\[offset:([+-]?\\d+)]").find(raw)?.groupValues?.get(1)?.toLongOrNull() ?: 0
+        val offset = offsetStamp.find(raw)?.groupValues?.get(1)?.toLongOrNull() ?: 0
         val lines = raw.lineSequence().flatMap { row ->
             val stamps = lineStamp.findAll(row).toList()
             val content = row.substring(stamps.lastOrNull()?.range?.last?.plus(1) ?: row.length)
@@ -94,8 +95,13 @@ internal object LyricsParsers {
         return finishLyrics(lines, source, durationMs)
     }
 
-    private fun attribute(element: Element, name: String): String? = (0 until element.attributes.length)
-        .map { element.attributes.item(it) }.firstOrNull { (it.localName ?: it.nodeName) == name }?.nodeValue
+    private fun attribute(element: Element, name: String): String? {
+        for (index in 0 until element.attributes.length) {
+            val attribute = element.attributes.item(index)
+            if ((attribute.localName ?: attribute.nodeName) == name) return attribute.nodeValue
+        }
+        return null
+    }
 
     fun lyricsfile(raw: String, source: String, durationMs: Long = 0): LyricsDocument? {
         val settings = LoadSettings.builder().setCodePointLimit(1_000_000).setMaxAliasesForCollections(0).setAllowDuplicateKeys(false).build()

@@ -4,7 +4,7 @@ import java.text.Normalizer
 import java.util.Locale
 
 data class LyricsTrack(val title: String, val artist: String, val album: String = "", val durationMs: Long = 0) {
-    val key: String get() = listOf(title, artist, album, (durationMs / 1_000).toString()).joinToString("\u0000") { normalize(it) }
+    val key: String = listOf(title, artist, album, (durationMs / 1_000).toString()).joinToString("\u0000") { normalize(it) }
 }
 
 data class LyricWord(val startMs: Long, val endMs: Long, val from: Int, val until: Int)
@@ -32,8 +32,11 @@ data class LyricsDocument(val lines: List<LyricLine>, val source: String, val in
     }
 }
 
+private val accents = Regex("\\p{M}")
+private val separators = Regex("[^\\p{L}\\p{N}]+")
+
 internal fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKD)
-    .replace(Regex("\\p{M}"), "").lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+    .replace(accents, "").lowercase(Locale.ROOT).replace(separators, " ").trim()
 
 internal fun finishLyrics(lines: List<LyricLine>, source: String, durationMs: Long = 0): LyricsDocument? {
     if (lines.none { it.text.isNotBlank() }) return null

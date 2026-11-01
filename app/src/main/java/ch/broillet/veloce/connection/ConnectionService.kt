@@ -29,7 +29,6 @@ import ch.broillet.veloce.protocol.Proto
 import ch.broillet.veloce.protocol.VideoMode
 import ch.broillet.veloce.ui.CarLauncher
 import ch.broillet.veloce.ui.CarNavigation
-import ch.broillet.veloce.ui.VeloceTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -260,7 +259,7 @@ class ConnectionService : Service() {
                         mode.touchWidth, mode.touchHeight)
                     window = ProjectedWindow(this@ConnectionService, prepared.surface, spec,
                         { navigation.back(::exit) }, navigation::home, buttons) {
-                        VeloceTheme { CarLauncher(spec, apps, navigation, app.media, ::exit) }
+                        CarLauncher(spec, apps, navigation, app.media, ::exit)
                     }
                     prepared.start()
                     startedVideo = true

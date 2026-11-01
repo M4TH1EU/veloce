@@ -1,6 +1,5 @@
 package ch.broillet.veloce.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -61,34 +60,35 @@ internal fun GlassSurface(
     content: @Composable BoxScope.() -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val defaultInteractions = remember { MutableInteractionSource() }
-    val interactions = interactionSource ?: defaultInteractions
-    val pressed by interactions.collectIsPressedAsState()
+    val interactions = interactionSource ?: remember { MutableInteractionSource() }
+    val pressed = if (onClick != null || interactionSource != null) interactions.collectIsPressedAsState().value else false
     val scale by animateFloatAsState(if (pressed) .96f else 1f, spring(dampingRatio = .8f, stiffness = 650f), label = "Glass press")
-    val backing by animateFloatAsState(opacity, tween(200), label = "Glass backing")
-    val highlight by animateFloatAsState(if (selected) .23f else .10f, tween(180), label = "Glass selection")
+    val backing = animateFloatAsState(opacity, tween(200), label = "Glass backing")
+    val highlight = animateFloatAsState(if (selected) .23f else .10f, tween(180), label = "Glass selection")
     val accent = MaterialTheme.colorScheme.primary
-    val fill = remember(highlight, accent) {
-        Brush.linearGradient(listOf(
-            accent.copy(alpha = highlight),
-            Color.White.copy(alpha = .025f),
-            Color.White.copy(alpha = .07f),
+    val surface = MaterialTheme.colorScheme.surface
+    val edge = remember(focused, selected, accent) {
+        Brush.linearGradient(if (focused) listOf(accent, accent) else listOf(
+            Color.White.copy(alpha = if (selected) .5f else .28f),
+            Color.White.copy(alpha = .04f),
+            Color.White.copy(alpha = .14f),
         ))
     }
-    val edge = if (focused) Brush.linearGradient(listOf(accent, accent)) else Brush.linearGradient(listOf(
-        Color.White.copy(alpha = if (selected) .5f else .28f),
-        Color.White.copy(alpha = .04f),
-        Color.White.copy(alpha = .14f),
-    ))
     val decorated = modifier.graphicsLayer { scaleX = scale; scaleY = scale }.onFocusChanged { focused = it.hasFocus }
         .border(if (focused) 2.dp else 1.dp, edge, shape)
     val body: @Composable () -> Unit = {
-        Box(Modifier.clip(shape).background(fill), content = content)
+        Box(Modifier.clip(shape).drawWithCache {
+            val fill = Brush.linearGradient(listOf(accent.copy(alpha = highlight.value),
+                Color.White.copy(alpha = .025f), Color.White.copy(alpha = .07f)))
+            onDrawBehind {
+                drawRect(surface.copy(alpha = backing.value))
+                drawRect(fill)
+            }
+        }, content = content)
     }
-    val surface = MaterialTheme.colorScheme.surface.copy(alpha = backing)
-    if (onClick == null) Surface(decorated, shape, surface, content = body)
+    if (onClick == null) Surface(decorated, shape, Color.Transparent, content = body)
     else Surface(onClick = onClick, modifier = decorated, enabled = enabled, shape = shape,
-        interactionSource = interactions, color = surface, content = body)
+        interactionSource = interactions, color = Color.Transparent, content = body)
 }
 
 @Composable

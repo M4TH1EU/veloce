@@ -37,6 +37,13 @@ data class NowPlaying(
     val mediaId: String? = null,
     val album: String? = null,
 ) {
+    val toggleAction: Long get() {
+        val action = if (playing) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
+        return if (supports(action)) action else PlaybackState.ACTION_PLAY_PAUSE
+    }
+
+    fun supports(action: Long): Boolean = actions and action != 0L
+
     fun positionAt(elapsedRealtime: Long): Long {
         if (positionMs < 0) return positionMs
         val elapsed = if (advancing && updatedAtMs > 0) (elapsedRealtime - updatedAtMs).coerceAtLeast(0) else 0
@@ -115,59 +122,48 @@ class ActiveMedia(context: Context) {
             controllers.firstOrNull { it.packageName == packageName && it.playbackState?.state == PlaybackState.STATE_PLAYING }
                 ?: controllers.firstOrNull { it.packageName == packageName }
 
-    fun customAction(id: String, packageName: String?): Boolean {
+    private inline fun dispatch(packageName: String?, command: (MediaController) -> Unit): Boolean {
         val controller = controller(packageName) ?: return false
-        val action = controller.playbackState?.customActions?.firstOrNull { it.action == id } ?: return false
-        return try {
-            controller.transportControls.sendCustomAction(action.action, action.extras ?: Bundle.EMPTY)
-            true
-        } catch (_: SecurityException) { refresh(); false }
-    }
-
-    fun setSpeed(speed: Float, packageName: String?): Boolean {
-        val controller = controller(packageName) ?: return false
-        if (!speed.isFinite() || speed !in .25f..3f || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SET_PLAYBACK_SPEED == 0L) return false
-        return try { controller.transportControls.setPlaybackSpeed(speed); true }
+        return try { command(controller); true }
         catch (_: SecurityException) { refresh(); false }
     }
 
-    fun seekTo(positionMs: Long, packageName: String? = null): Boolean {
-        val controller = controller(packageName) ?: return false
-        if (positionMs < 0 || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SEEK_TO == 0L) return false
-        val duration = controller.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0 }
-        return try {
-            controller.transportControls.seekTo(positionMs.coerceAtMost(duration ?: Long.MAX_VALUE))
-            true
-        } catch (_: SecurityException) { refresh(); false }
+    fun customAction(id: String, packageName: String?): Boolean = dispatch(packageName) { controller ->
+        val action = controller.playbackState?.customActions?.firstOrNull { it.action == id } ?: return false
+        controller.transportControls.sendCustomAction(action.action, action.extras ?: Bundle.EMPTY)
     }
 
-    fun control(action: Long, packageName: String? = null): Boolean {
-        val controller = controller(packageName) ?: return false
+    fun setSpeed(speed: Float, packageName: String?): Boolean = dispatch(packageName) { controller ->
+        if (!speed.isFinite() || speed !in .25f..3f || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SET_PLAYBACK_SPEED == 0L) return false
+        controller.transportControls.setPlaybackSpeed(speed)
+    }
+
+    fun seekTo(positionMs: Long, packageName: String? = null): Boolean = dispatch(packageName) { controller ->
+        if (positionMs < 0 || (controller.playbackState?.actions ?: 0) and PlaybackState.ACTION_SEEK_TO == 0L) return false
+        val duration = controller.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0 }
+        controller.transportControls.seekTo(positionMs.coerceAtMost(duration ?: Long.MAX_VALUE))
+    }
+
+    fun control(action: Long, packageName: String? = null): Boolean = dispatch(packageName) { controller ->
         val actions = controller.playbackState?.actions ?: 0
         val command = if (action == PlaybackState.ACTION_PLAY_PAUSE) {
             val next = if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY
             if (actions and next != 0L) next else action
         } else action
         if (actions and command == 0L) return false
-        return try {
-            when (command) {
-                PlaybackState.ACTION_PLAY -> controller.transportControls.play()
-                PlaybackState.ACTION_PAUSE -> controller.transportControls.pause()
-                PlaybackState.ACTION_PLAY_PAUSE -> {
-                    val down = controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                    val up = controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                    return down && up
-                }
-                PlaybackState.ACTION_SKIP_TO_PREVIOUS -> controller.transportControls.skipToPrevious()
-                PlaybackState.ACTION_SKIP_TO_NEXT -> controller.transportControls.skipToNext()
-                PlaybackState.ACTION_REWIND -> controller.transportControls.rewind()
-                PlaybackState.ACTION_FAST_FORWARD -> controller.transportControls.fastForward()
-                else -> return false
+        when (command) {
+            PlaybackState.ACTION_PLAY -> controller.transportControls.play()
+            PlaybackState.ACTION_PAUSE -> controller.transportControls.pause()
+            PlaybackState.ACTION_PLAY_PAUSE -> {
+                val down = controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                val up = controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                return down && up
             }
-            true
-        } catch (_: SecurityException) {
-            refresh()
-            false
+            PlaybackState.ACTION_SKIP_TO_PREVIOUS -> controller.transportControls.skipToPrevious()
+            PlaybackState.ACTION_SKIP_TO_NEXT -> controller.transportControls.skipToNext()
+            PlaybackState.ACTION_REWIND -> controller.transportControls.rewind()
+            PlaybackState.ACTION_FAST_FORWARD -> controller.transportControls.fastForward()
+            else -> return false
         }
     }
 

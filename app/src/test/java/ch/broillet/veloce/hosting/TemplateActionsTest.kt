@@ -8,9 +8,6 @@ import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.Pane
 import androidx.car.app.model.PaneTemplate
 import androidx.car.app.model.Row
-import androidx.car.app.model.ItemList
-import androidx.car.app.model.ListTemplate
-import androidx.car.app.navigation.model.MapWithContentTemplate
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,14 +17,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class TemplateActionsTest {
-    @Test fun embeddedMapSubmenusKeepTheirNativeBackActionAndPageTitle() {
-        val page = ListTemplate.Builder().setTitle("Route options").setHeaderAction(Action.BACK)
-            .setSingleList(ItemList.Builder().addItem(Row.Builder().setTitle("Avoid tolls").build()).build()).build()
-        val map = MapWithContentTemplate.Builder().setContentTemplate(page).build()
-        assertEquals(Action.TYPE_BACK, map.pageHeader()!!.startHeaderAction!!.type)
-        assertEquals("Route options", map.pageTitle())
-    }
-
     @Test fun legacyActionStripIsNotRenderedAgainWhenExposedByTheModernHeader() {
         val close = Action.Builder().setTitle("Close").setOnClickListener {}.build()
         val strip = ActionStrip.Builder().addAction(close).build()

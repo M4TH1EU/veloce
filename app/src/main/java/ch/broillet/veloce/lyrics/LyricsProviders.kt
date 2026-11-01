@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
 internal fun interface LyricsHttp { suspend fun get(url: String): String? }
-internal interface LyricsProvider { suspend fun find(track: LyricsTrack): LyricsDocument? }
+internal fun interface LyricsProvider { suspend fun find(track: LyricsTrack): LyricsDocument? }
 
 internal class NetworkLyricsHttp : LyricsHttp {
     private class Host { val lock = Mutex(); var last = 0L; var blockedUntil = 0L }
@@ -81,19 +81,20 @@ internal class LrclibProvider(private val http: LyricsHttp) : LyricsProvider {
         http.get(endpoint("https://lrclib.net/api/get", exact))?.let { parse(JSONObject(it), track.durationMs) }?.let { return it }
         val response = http.get(endpoint("https://lrclib.net/api/search", mapOf("track_name" to track.title, "artist_name" to track.artist)))
             ?.let(::JSONArray) ?: return null
+        val title = normalize(track.title)
+        val artist = normalize(track.artist)
+        val album = normalize(track.album)
+        fun match(row: JSONObject): Int? {
+            val candidate = normalize(row.optString("artistName"))
+            if (normalize(row.optString("trackName")) != title || candidate.isEmpty() ||
+                !(candidate.contains(artist) || artist.contains(candidate))) return null
+            val duration = (row.optDouble("duration", 0.0) * 1_000).toLong()
+            if (duration > 0 && track.durationMs > 0 && abs(duration - track.durationMs) > 8_000) return null
+            return if (normalize(row.optString("albumName")) == album) 1 else 0
+        }
         return (0 until response.length()).map { response.getJSONObject(it) }
-            .mapNotNull { row -> match(row, track)?.let { score -> score to row } }.sortedByDescending { it.first }
+            .mapNotNull { row -> match(row)?.let { score -> score to row } }.sortedByDescending { it.first }
             .mapNotNull { (_, row) -> parse(row, track.durationMs) }.maxByOrNull { it.quality }
-    }
-
-    private fun match(row: JSONObject, track: LyricsTrack): Int? {
-        val title = normalize(row.optString("trackName"))
-        val artist = normalize(row.optString("artistName"))
-        if (title != normalize(track.title) || !(artist.contains(normalize(track.artist)) || normalize(track.artist).contains(artist))) return null
-        if (artist.isEmpty()) return null
-        val duration = (row.optDouble("duration", 0.0) * 1_000).toLong()
-        if (duration > 0 && track.durationMs > 0 && abs(duration - track.durationMs) > 8_000) return null
-        return 4 + if (normalize(row.optString("albumName")) == normalize(track.album)) 1 else 0
     }
 
     private fun parse(row: JSONObject, durationMs: Long): LyricsDocument? {
@@ -108,17 +109,20 @@ internal class LrclibProvider(private val http: LyricsHttp) : LyricsProvider {
 }
 
 internal class KugouProvider(private val http: LyricsHttp) : LyricsProvider {
+    private val credits = Regex("(?i)^(作词|作曲|编曲|词曲|制作人|lyricist|composer|arranger|lyrics by|written by|producer)\\s*[:：]")
+
     override suspend fun find(track: LyricsTrack): LyricsDocument? {
         val keyword = "${track.title} ${track.artist}"
         candidate(mapOf("keyword" to keyword, "duration" to track.durationMs.toString()), track)?.let { return it }
         val response = http.get(endpoint("https://mobileservice.kugou.com/api/v3/search/song",
             mapOf("keyword" to keyword, "pagesize" to "5", "version" to "9108", "plat" to "0")))?.let(::JSONObject)
             ?.optJSONObject("data")?.optJSONArray("info") ?: return null
+        val title = normalize(track.title)
         for (index in 0 until minOf(response.length(), 5)) {
             val song = response.getJSONObject(index)
             val duration = song.optLong("duration") * 1_000
             if (duration > 0 && track.durationMs > 0 && abs(duration - track.durationMs) > 8_000) continue
-            if (normalize(song.optString("songname")) != normalize(track.title)) continue
+            if (normalize(song.optString("songname")) != title) continue
             val hash = song.optString("hash").takeIf { it.isNotBlank() } ?: continue
             candidate(mapOf("hash" to hash), track)?.let { return it }
         }
@@ -128,10 +132,12 @@ internal class KugouProvider(private val http: LyricsHttp) : LyricsProvider {
     private suspend fun candidate(query: Map<String, String>, track: LyricsTrack): LyricsDocument? {
         val response = http.get(endpoint("https://lyrics.kugou.com/search", query + mapOf("ver" to "1", "man" to "yes", "client" to "pc")))
             ?.let(::JSONObject)?.optJSONArray("candidates") ?: return null
-        val candidates = (0 until minOf(response.length(), 8)).map { response.getJSONObject(it) }
+        val title = normalize(track.title)
+        val artist = normalize(track.artist)
+        val candidates = (0 until minOf(response.length(), 8)).asSequence().map { response.getJSONObject(it) }
             .filter { row -> row.optLong("duration") == 0L || track.durationMs <= 0 || abs(row.optLong("duration") - track.durationMs) <= 8_000 }
-            .filter { row -> row.optString("song").let { it.isBlank() || normalize(it) == normalize(track.title) } }
-            .filter { row -> row.optString("singer").let { it.isBlank() || normalize(it).contains(normalize(track.artist)) || normalize(track.artist).contains(normalize(it)) } }
+            .filter { row -> row.optString("song").let { it.isBlank() || normalize(it) == title } }
+            .filter { row -> normalize(row.optString("singer")).let { it.isEmpty() || it.contains(artist) || artist.contains(it) } }
         for (row in candidates.take(2)) {
             val id = row.optString("id").takeIf { it.isNotBlank() } ?: continue
             val access = row.optString("accesskey").takeIf { it.isNotBlank() } ?: continue
@@ -140,7 +146,6 @@ internal class KugouProvider(private val http: LyricsHttp) : LyricsProvider {
             val encoded = download.optString("content").takeIf { it.isNotBlank() } ?: continue
             val text = String(Base64.getMimeDecoder().decode(encoded), StandardCharsets.UTF_8)
             LyricsParsers.lrc(text, "KuGou", track.durationMs)?.let { lyrics ->
-                val credits = Regex("(?i)^(作词|作曲|编曲|词曲|制作人|lyricist|composer|arranger|lyrics by|written by|producer)\\s*[:：]")
                 finishLyrics(lyrics.lines.filterNot { (it.startMs ?: 0) < 15_000 && credits.containsMatchIn(it.text) }, "KuGou", track.durationMs)
                     ?.let { return it }
             }

@@ -30,8 +30,9 @@ import java.io.Closeable
 enum class MediaPresentation { LIST, COVER, CATEGORY }
 
 data class MediaEntry(val id: String, val title: String, val subtitle: String, val browsable: Boolean, val playable: Boolean,
+    val item: MediaItem,
     val artwork: MediaArtwork? = null, val presentation: MediaPresentation = if (browsable) MediaPresentation.COVER else MediaPresentation.LIST,
-    val childBrowsableStyle: Int = 0, val childPlayableStyle: Int = 0, val item: MediaItem? = null)
+    val childBrowsableStyle: Int = 0, val childPlayableStyle: Int = 0)
 data class MediaFolder(val id: String, val title: String, val page: Int = 0, val query: String? = null,
     val browsableStyle: Int = 0, val playableStyle: Int = 0)
 data class LibraryPage(
@@ -258,9 +259,9 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
             else if (style == MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_GRID_ITEM) MediaPresentation.CATEGORY
             else MediaPresentation.COVER
         return MediaEntry(item.mediaId, (metadata.displayTitle ?: metadata.title)?.toString() ?: item.mediaId,
-            (metadata.subtitle ?: metadata.artist)?.toString().orEmpty(), browsable, metadata.isPlayable == true,
+            (metadata.subtitle ?: metadata.artist)?.toString().orEmpty(), browsable, metadata.isPlayable == true, item,
             MediaArtwork(metadata.artworkUri, metadata.artworkData), presentation,
-            metadata.extras.style(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE), metadata.extras.style(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE), item)
+            metadata.extras.style(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE), metadata.extras.style(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE))
     }
 
     fun play(entry: MediaEntry): Boolean {
@@ -272,7 +273,7 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
         }
         return try {
             playbackError = null
-            val original = entry.item ?: MediaItem.Builder().setMediaId(entry.id).build()
+            val original = entry.item
             legacy?.let {
                 val extras = Bundle(original.mediaMetadata.extras ?: Bundle.EMPTY).apply { original.requestMetadata.extras?.let(::putAll) }
                 check(it.play(entry.id, extras.takeUnless { it.isEmpty })) { "Playback session is not ready. Reopen the app." }
@@ -286,7 +287,6 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
     }
 
     fun control(action: Long): Boolean {
-        val client = browser ?: return false
         val command = when (action) {
             PlaybackState.ACTION_PLAY, PlaybackState.ACTION_PAUSE, PlaybackState.ACTION_PLAY_PAUSE -> Player.COMMAND_PLAY_PAUSE
             PlaybackState.ACTION_SKIP_TO_PREVIOUS -> Player.COMMAND_SEEK_TO_PREVIOUS
@@ -295,9 +295,7 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
             PlaybackState.ACTION_FAST_FORWARD -> Player.COMMAND_SEEK_FORWARD
             else -> return false
         }
-        if (closed || !client.isCommandAvailable(command)) return false
-        return try {
-            playbackError = null
+        return dispatch(command) { client ->
             when (action) {
                 PlaybackState.ACTION_PLAY -> client.play()
                 PlaybackState.ACTION_PAUSE -> client.pause()
@@ -307,8 +305,7 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
                 PlaybackState.ACTION_REWIND -> client.seekBack()
                 PlaybackState.ACTION_FAST_FORWARD -> client.seekForward()
             }
-            true
-        } catch (failure: Exception) { playbackError = failure.message; false }
+        }
     }
 
     fun customAction(id: String): Boolean {
@@ -317,7 +314,7 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
         try { legacy?.customAction(id)?.let { return it } }
         catch (failure: Exception) { playbackError = failure.message; return false }
         val command = buttons(client).firstOrNull { it.sessionCommand?.customAction == id }?.sessionCommand ?: return false
-        if (closed || !client.isSessionCommandAvailable(command)) return false
+        if (!client.isSessionCommandAvailable(command)) return false
         playbackError = null
         scope.launch {
             try {
@@ -331,21 +328,23 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
     }
 
     fun setSpeed(speed: Float): Boolean {
-        val client = browser ?: return false
-        if (closed || !speed.isFinite() || speed !in .25f..3f || !client.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) return false
-        return try { client.setPlaybackSpeed(speed); true }
-        catch (failure: Exception) { playbackError = failure.message; false }
+        if (!speed.isFinite() || speed !in .25f..3f) return false
+        return dispatch(Player.COMMAND_SET_SPEED_AND_PITCH) { it.setPlaybackSpeed(speed) }
     }
 
     fun seekTo(positionMs: Long): Boolean {
-        val client = browser ?: return false
-        if (closed || positionMs < 0 || !client.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) return false
-        return try {
-            playbackError = null
+        if (positionMs < 0) return false
+        return dispatch(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) { client ->
             client.seekTo(positionMs.coerceAtMost(client.duration.takeIf { it > 0 } ?: Long.MAX_VALUE))
             publish()
-            true
-        } catch (failure: Exception) { playbackError = failure.message; false }
+        }
+    }
+
+    private inline fun dispatch(command: Int, action: (MediaBrowser) -> Unit): Boolean {
+        val client = browser ?: return false
+        if (closed || !client.isCommandAvailable(command)) return false
+        return try { playbackError = null; action(client); true }
+        catch (failure: Exception) { playbackError = failure.message; false }
     }
 
     private fun buttons(client: MediaBrowser): List<CommandButton> = (client.mediaButtonPreferences + client.customLayout)
@@ -368,8 +367,7 @@ class MediaLibrary(context: Context, val app: CarApp, private val log: (String) 
         legacy?.snapshot()?.takeIf { it.title != null }?.let { nowPlaying = it; return }
         nowPlaying = NowPlaying(app.component.packageName, (metadata.displayTitle ?: metadata.title)?.toString(),
             metadata.artist?.toString(), client.isPlaying || (client.playWhenReady && client.playbackState == Player.STATE_BUFFERING), actions,
-            MediaArtwork(metadata.artworkUri, metadata.artworkData, cacheKey = artworkIdentity(app.component.packageName,
-                metadata.albumTitle?.toString(), metadata.artist?.toString(), client.currentMediaItem?.mediaId, metadata.title?.toString())),
+            MediaArtwork(metadata.artworkUri, metadata.artworkData),
             buttons(client).map { button ->
                 val localIcon = CommandButton.getIconResIdForIconConstant(button.icon)
                 MediaAction(button.sessionCommand!!.customAction, button.displayName.toString(),
