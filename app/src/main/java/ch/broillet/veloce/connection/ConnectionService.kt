@@ -94,7 +94,7 @@ class ConnectionService : Service() {
     private fun notification(detail: String): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, ConnectionService::class.java).setAction("disconnect"), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, "car_connection").setSmallIcon(R.drawable.ic_connection)
+        return Notification.Builder(this, "car_connection").setSmallIcon(R.drawable.ic_veloce_mark)
             .setContentTitle(getString(R.string.app_name)).setContentText(detail).setContentIntent(open)
             .setOngoing(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE)
             .addAction(Notification.Action.Builder(null, getString(R.string.disconnect), stop).build()).build()
@@ -263,6 +263,7 @@ class ConnectionService : Service() {
                     }
                     prepared.start()
                     startedVideo = true
+                    app.connections.projecting()
                     status("Projecting launcher · ${mode.width} × ${mode.height}")
                 } catch (_: CancellationException) {
                     // A disconnect may arrive while the encoder is being prepared.

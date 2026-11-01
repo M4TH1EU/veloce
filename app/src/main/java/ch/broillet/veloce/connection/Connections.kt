@@ -13,7 +13,8 @@ import java.time.format.DateTimeFormatter
 
 data class ConnectionState(
     val active: Boolean = false,
-    val detail: String = "Ready to connect",
+    val projecting: Boolean = false,
+    val detail: String = "Plug in or go wireless. Your launcher is ready for the road.",
     val identityReady: Boolean = false,
     val preparing: Boolean = false,
     val error: Boolean = false,
@@ -35,8 +36,10 @@ class Connections(private val context: Context) {
 
     fun update(detail: String, active: Boolean, error: Boolean = false) {
         log(detail)
-        mutable.update { it.copy(detail = detail, active = active, error = error) }
+        mutable.update { it.copy(detail = detail, active = active, projecting = active && it.projecting, error = error) }
     }
+
+    fun projecting() { mutable.update { it.copy(projecting = true) } }
 
     fun prepare() {
         mutable.update { it.copy(preparing = true, error = false) }

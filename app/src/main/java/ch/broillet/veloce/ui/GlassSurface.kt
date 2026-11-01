@@ -111,12 +111,16 @@ internal fun GlassIconButton(
     }
 }
 
-internal fun Modifier.cabinBackground() = drawWithCache {
-    val base = Brush.verticalGradient(listOf(Color(0xFF222222), Color(0xFF0C0C0C)))
-    val light = Brush.radialGradient(listOf(Color.White.copy(alpha = .045f), Color.Transparent),
-        Offset(size.width * .45f, 0f), maxOf(size.width, size.height) * .75f)
-    onDrawBehind {
-        drawRect(base)
-        drawRect(light)
+@Composable
+internal fun Modifier.cabinBackground(): Modifier {
+    val colors = MaterialTheme.colorScheme
+    return drawWithCache {
+        val base = Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surfaceContainerLowest))
+        val light = Brush.radialGradient(listOf(colors.primary.copy(alpha = .055f), Color.Transparent),
+            Offset(size.width * .45f, 0f), maxOf(size.width, size.height) * .75f)
+        onDrawBehind {
+            drawRect(base)
+            drawRect(light)
+        }
     }
 }

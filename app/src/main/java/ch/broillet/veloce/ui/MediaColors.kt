@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun AlbumSceneTheme(bitmap: Bitmap?, dense: Boolean, content: @Composable () -> Unit) {
     val fallback = MaterialTheme.colorScheme.primary
-    val extracted by produceState(fallback, bitmap) {
+    val extracted by produceState(fallback, bitmap, fallback) {
         value = if (bitmap == null) fallback else withContext(Dispatchers.Default) {
             runCatching {
                 val readable = if (bitmap.config == Bitmap.Config.HARDWARE) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap

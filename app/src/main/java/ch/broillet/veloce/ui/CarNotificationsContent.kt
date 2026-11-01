@@ -46,7 +46,8 @@ fun CarNotificationsContent(notifications: CarNotifications, modifier: Modifier 
                         PackageIcon(notice.packageName, Modifier.size(30.dp))
                         Text(notice.app, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f),
                             color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val time = remember(notice.postedAt) { android.text.format.DateFormat.getTimeFormat(context).format(Date(notice.postedAt)) }
+                        val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(context)
+                        val time = android.text.format.DateFormat.format(if (is24Hour) "HH:mm" else "h:mm a", Date(notice.postedAt)).toString()
                         Text(time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         GlassSurface(onClick = { notifications.remove(notice.key) }, shape = RoundedCornerShape(24.dp)) {
                             Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 20.dp), contentAlignment = Alignment.Center) {

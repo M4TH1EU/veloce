@@ -2,6 +2,8 @@ package ch.broillet.veloce.lyrics
 
 import android.app.Application
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.runBlocking
@@ -95,6 +97,38 @@ class LyricsTest {
         assertEquals(words, cache.write(track.key, CachedLyrics(line, 200)).document)
         assertEquals(words, cache.read(track.key)!!.document)
         assertEquals(line, cache.write(track.key, CachedLyrics(line, 300), replace = true).document)
+    }
+
+    @Test fun clearingLyricsEvictsDiskMemoryAndMisses() = runBlocking {
+        val directory = temporary.newFolder()
+        val cache = LyricsCache(directory)
+        cache.write(track.key, CachedLyrics(words, 100))
+        val missing = track.copy(title = "Missing")
+        val calls = AtomicInteger()
+        val repository = LyricsRepository(cache, listOf(provider { calls.incrementAndGet(); null })) { 1_000 }
+        repository.lyrics(missing).toList()
+        assertEquals(1, repository.cacheInfo().count)
+        assertTrue(repository.cacheInfo().bytes > 0)
+        repository.clearCache()
+        assertEquals(LyricsCacheInfo(), repository.cacheInfo())
+        assertNull(cache.read(track.key))
+        assertNull(LyricsCache(directory).read(track.key))
+        repository.lyrics(missing).toList()
+        assertEquals(2, calls.get())
+    }
+
+    @Test fun anInFlightLookupCannotRepopulateAClearedCache() = runBlocking {
+        val cache = LyricsCache(temporary.newFolder())
+        val started = CompletableDeferred<Unit>()
+        val answer = CompletableDeferred<LyricsDocument>()
+        val repository = LyricsRepository(cache, listOf(provider { started.complete(Unit); answer.await() })) { 1_000 }
+        val lookup = async { repository.lyrics(track).toList() }
+        started.await()
+        repository.clearCache()
+        answer.complete(words)
+        assertEquals(words, lookup.await().last().document)
+        assertEquals(LyricsCacheInfo(), repository.cacheInfo())
+        assertNull(cache.read(track.key))
     }
 
     @Test fun repositoryShowsAnEarlyResultThenUpgradesAndUsesPersistentCache() = runBlocking {

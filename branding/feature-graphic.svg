@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <title>Veloce — Your drive. A little more you.</title>
+  <defs>
+    <linearGradient id="cabin" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#303236"/>
+      <stop offset="1" stop-color="#101010"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#42454a"/>
+      <stop offset="1" stop-color="#25272a"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#cabin)" d="M0 0H1024V500H0Z"/>
+  <g fill="#f3f2f0">
+    <path transform="translate(74 66) scale(2.4)" d="M4.25 3.5C3.2 3.5 2.54 4.6 3.02 5.54L10.2 19.45C10.95 20.9 13.05 20.9 13.8 19.45L20.98 5.54C21.46 4.6 20.8 3.5 19.75 3.5H16.56C16.02 3.5 15.54 3.82 15.32 4.31L12 11.84L8.68 4.31C8.46 3.82 7.98 3.5 7.44 3.5Z"/>
+    <text x="151" y="108" font-family="DejaVu Sans, sans-serif" font-size="30" letter-spacing="-1">Veloce</text>
+    <text x="80" y="228" font-family="DejaVu Sans, sans-serif" font-size="52" letter-spacing="-2">Your drive.</text>
+    <text x="80" y="295" font-family="DejaVu Sans, sans-serif" font-size="52" letter-spacing="-2">A little more you.</text>
+    <text x="82" y="357" fill="#bfc2c8" font-family="DejaVu Sans, sans-serif" font-size="20">A more personal car display.</text>
+  </g>
+  <g transform="translate(580 130)">
+    <rect width="364" height="240" rx="32" fill="#141517" stroke="#5b5e64"/>
+    <rect x="14" y="14" width="42" height="212" rx="18" fill="url(#glass)"/>
+    <path d="M27 41L35 35L43 41V50H38V44H32V50H27Z" fill="#e3e5e8"/>
+    <circle cx="35" cy="194" r="4" fill="#cbd0d8"/>
+    <rect x="70" y="14" width="198" height="212" rx="20" fill="#25272a"/>
+    <g stroke="#393c41" stroke-width="12">
+      <path d="M113 14V226M184 14V226M240 14V226M70 65H268M70 137H268M70 191H268"/>
+    </g>
+    <path d="M113 191V147Q113 137 123 137H174Q184 137 184 127V75Q184 65 194 65H240" fill="none" stroke="#cbd0d8" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="240" cy="65" r="6" fill="#25272a" stroke="#cbd0d8" stroke-width="3"/>
+    <circle cx="113" cy="191" r="13" fill="#cbd0d8"/>
+    <path d="M113 183L118 197L113 194L108 197Z" fill="#191b1e"/>
+    <rect x="282" y="14" width="68" height="150" rx="20" fill="url(#glass)"/>
+    <path d="M309 102V75L329 71V97M309 76L329 72" fill="none" stroke="#cbd0d8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="304" cy="103" rx="7" ry="5" fill="#cbd0d8"/>
+    <ellipse cx="324" cy="98" rx="7" ry="5" fill="#cbd0d8"/>
+    <rect x="282" y="178" width="68" height="48" rx="18" fill="url(#glass)"/>
+    <path d="M298 197V207M309 197L301 202L309 207ZM324 197V207M332 197V207" fill="#cbd0d8" stroke="#cbd0d8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

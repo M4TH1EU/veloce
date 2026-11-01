@@ -2,7 +2,6 @@ package ch.broillet.veloce
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.AlertDialog
 import android.app.PendingIntent
 import android.bluetooth.BluetoothManager
 import android.companion.AssociationInfo
@@ -27,6 +26,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -34,6 +41,8 @@ import ch.broillet.veloce.connection.ConnectionService
 import ch.broillet.veloce.audio.AudioRoutes
 import ch.broillet.veloce.ui.VeloceApp
 import ch.broillet.veloce.ui.VeloceTheme
+import ch.broillet.veloce.ui.PairedCar
+import ch.broillet.veloce.ui.PairedCarSheet
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -43,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private var requestedAudio: String? = null
     private var consentSession: String? = null
     private var audioRoutes: AudioRoutes? = null
+    private var wirelessCars by mutableStateOf<List<PairedCar>?>(null)
     private val companionApproval = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         if (result.resultCode == RESULT_OK) result.data?.getParcelableExtra(CompanionDeviceManager.EXTRA_ASSOCIATION, AssociationInfo::class.java)
             ?.let(model.wirelessAuto::associated)
@@ -89,11 +99,27 @@ class MainActivity : ComponentActivity() {
         registerReceiver(usbEvents, IntentFilter(usbPermissionAction), RECEIVER_NOT_EXPORTED)
         if (savedInstanceState == null) handleAccessory(intent)
         setContent {
-            VeloceTheme { VeloceApp(model, ::connectUsb, ::connectWireless, ::openMediaAccess, ::shareDiagnostics,
-                { requestAudio(manual = true) }, { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }, {
-                    if (model.wirelessAuto.enabled.value) model.wirelessAuto.disable()
-                    else model.wirelessAuto.enable { companionApproval.launch(IntentSenderRequest.Builder(it).build()) }
-                }) }
+            val settings by model.settings.state.collectAsStateWithLifecycle()
+            VeloceTheme(settings) {
+                val light = MaterialTheme.colorScheme.background.luminance() > .5f
+                SideEffect {
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = light
+                        isAppearanceLightNavigationBars = light
+                    }
+                }
+                VeloceApp(model, ::connectUsb, ::connectWireless, ::openMediaAccess, ::shareDiagnostics,
+                    { requestAudio(manual = true) }, { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }, {
+                        if (model.wirelessAuto.enabled.value) model.wirelessAuto.disable()
+                        else model.wirelessAuto.enable { companionApproval.launch(IntentSenderRequest.Builder(it).build()) }
+                    })
+                wirelessCars?.let { cars ->
+                    PairedCarSheet(cars, { wirelessCars = null }) { car ->
+                        wirelessCars = null
+                        model.connections.wireless(car.address)
+                    }
+                }
+            }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -180,9 +206,7 @@ class MainActivity : ComponentActivity() {
             model.connections.update("Pair the phone with your car in Android's Bluetooth settings first", false)
             return
         }
-        AlertDialog.Builder(this).setTitle(R.string.choose_car)
-            .setItems(cars.map { it.name ?: it.address }.toTypedArray()) { _, index -> model.connections.wireless(cars[index].address) }
-            .setNegativeButton(R.string.cancel, null).show()
+        wirelessCars = cars.map { PairedCar(it.name ?: it.address, it.address) }
     }
 
     private fun openMediaAccess() {

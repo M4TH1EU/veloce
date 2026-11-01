@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ch.broillet.veloce.settings.AppSettings
 
 enum class AppKind { MAP, AUDIO, OTHER }
 
@@ -14,6 +15,9 @@ data class CarApp(
     val label: String,
     val kind: AppKind,
 )
+
+fun List<CarApp>.visibleInCar(settings: AppSettings): List<CarApp> =
+    filter { settings.isAppVisible(it.component.packageName) }
 
 class CarApps(context: Context) {
     private val packages = context.packageManager

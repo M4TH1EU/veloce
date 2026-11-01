@@ -34,6 +34,7 @@ import ch.broillet.veloce.R
 import ch.broillet.veloce.VeloceApplication
 import ch.broillet.veloce.apps.AppKind
 import ch.broillet.veloce.apps.CarApp
+import ch.broillet.veloce.apps.visibleInCar
 import ch.broillet.veloce.hosting.CarAppContent
 import ch.broillet.veloce.hosting.hasMapSurface
 import ch.broillet.veloce.hosting.pageTitle
@@ -77,7 +78,10 @@ class CarNavigation {
 
 @Composable
 fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation, media: ActiveMedia, exit: () -> Unit) {
-    CarTheme { CarLauncherContent(spec, apps, navigation, media, exit) }
+    val app = LocalContext.current.applicationContext as VeloceApplication
+    val settings by app.settings.state.collectAsStateWithLifecycle()
+    val visibleApps = remember(apps, settings.hiddenAppPackages) { apps.visibleInCar(settings) }
+    CarTheme(settings) { CarLauncherContent(spec, visibleApps, navigation, media, exit) }
 }
 
 @Composable
@@ -111,7 +115,7 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
     val maps = remember(apps) { apps.filter { it.kind == AppKind.MAP } }
     val audioApps = remember(apps) { apps.filter { it.kind == AppKind.AUDIO } }
     val openMap: () -> Unit = {
-        val previous = host?.app?.takeIf { it.kind == AppKind.MAP }
+        val previous = maps.firstOrNull { it.component == host?.app?.component }
         when {
             previous != null -> workspace.open(previous)
             maps.size == 1 -> workspace.open(maps.first())
@@ -120,13 +124,13 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
     }
     val openPlayer: () -> Unit = {
         if (selected?.kind != AppKind.MAP) {
-            if (library != null && library.app.component.packageName == currentTrack?.packageName) workspace.open(library.app)
+            if (library != null && library.app in audioApps && library.app.component.packageName == currentTrack?.packageName) workspace.open(library.app)
             else navigation.home()
         }
         navigation.player = true
     }
     val openAudio: () -> Unit = {
-        val source = library?.app?.takeIf { it.component.packageName == currentTrack?.packageName }
+        val source = library?.app?.takeIf { it in audioApps && it.component.packageName == currentTrack?.packageName }
             ?: audioApps.firstOrNull { it.component.packageName == currentTrack?.packageName }
         when {
             source != null -> workspace.open(source)
@@ -166,7 +170,7 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
     val lyricsVisible = playerVisible && navigation.lyrics
     AlbumSceneTheme(album, denseChrome) {
         Box(Modifier.fillMaxSize().cabinBackground()) {
-            if (playerVisible) AlbumBackdrop(album, Modifier.fillMaxSize())
+            if (playerVisible && LocalAppSettings.current.artworkBackground) AlbumBackdrop(album, Modifier.fillMaxSize())
             BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = horizontal, vertical = vertical)) {
                 val canSplit = maxWidth >= 800.dp && maxHeight >= 420.dp && maxWidth > maxHeight
                 val splitAvailable = canSplit && mapVisible && selected?.kind == AppKind.MAP && selectedHost?.template is NavigationTemplate && selectedHost.error == null
@@ -238,7 +242,7 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
                                 if (navigation.notificationsOpen && notices.isNotEmpty()) Text(notices.size.toString(),
                                     style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
                                 if (playerVisible) {
-                                    if (libraryPlayer != null) GlassIconButton(CarSymbol.Library, stringResource(R.string.media_library),
+                                    if (libraryPlayer != null && libraryPlayer.app in audioApps) GlassIconButton(CarSymbol.Library, stringResource(R.string.media_library),
                                         { workspace.open(libraryPlayer.app) }, size = 60.dp)
                                     GlassIconButton(CarSymbol.Lyrics, stringResource(R.string.lyrics), { navigation.lyrics = true }, size = 60.dp,
                                         enabled = !playerTrack?.title.isNullOrBlank())
@@ -271,7 +275,7 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
                         .align(Alignment.CenterStart).padding(vertical = 8.dp).width(84.dp).fillMaxHeight(), splitVisible,
                         if (splitAvailable) ({ workspace.setSplitLayout(!splitScreen) }) else null)
                 }
-                if (navigation.projected && !navigation.notificationsOpen) {
+                if (navigation.projected && !navigation.notificationsOpen && LocalAppSettings.current.notificationBanners) {
                     CarNotificationBanner(notifications, { navigation.notificationsOpen = true },
                         Modifier.align(Alignment.TopCenter).padding(start = if (lyricsVisible) 24.dp else 108.dp, end = 24.dp, top = 16.dp))
                 }
@@ -332,7 +336,7 @@ private fun SidebarClock() {
             delay(60_000 - System.currentTimeMillis() % 60_000)
         }
     }
-    val is24Hour = DateFormat.is24HourFormat(context)
+    val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(context)
     val label = DateFormat.format(if (is24Hour) "HH:mm" else "h:mm a", clock).toString()
     val digits = MaterialTheme.typography.titleLarge.copy(fontSize = 26.sp, lineHeight = 28.sp,
         fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp, fontFeatureSettings = "tnum")

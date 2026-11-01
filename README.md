@@ -1,4 +1,5 @@
 # Veloce
+![](branding/feature-graphic-1024x500.png)
 
 An independent Android car-projection client for Android 14+, without Google Play
 services or root. USB and wireless connections share a launcher, AndroidX car-app
@@ -53,3 +54,9 @@ Navigation speech and calls are separate from playback capture.
 - [Architecture and references](docs/ARCHITECTURE.md).
 
 License selection is pending. No open-source license is granted by this repository yet.
+
+## Publishing artwork
+
+Adaptive and monochrome Android icons, splash artwork, and the in-app mark share
+the same branding. Store-ready icon and feature-graphic exports, with SVG sources,
+are in [`branding/`](branding/README.md).

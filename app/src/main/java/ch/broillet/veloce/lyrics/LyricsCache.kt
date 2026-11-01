@@ -8,9 +8,23 @@ import java.io.File
 import java.security.MessageDigest
 
 internal data class CachedLyrics(val document: LyricsDocument, val checkedAt: Long)
+data class LyricsCacheInfo(val count: Int = 0, val bytes: Long = 0)
 
 internal class LyricsCache(private val directory: File) {
     private val memory = LruCache<String, CachedLyrics>(64)
+    @Volatile var generation = 0L
+        private set
+
+    @Synchronized fun info(): LyricsCacheInfo {
+        val files = directory.listFiles()?.filter { it.isFile }.orEmpty()
+        return LyricsCacheInfo(files.count { it.extension == "json" }, files.sumOf { it.length() })
+    }
+
+    @Synchronized fun clear() {
+        generation++
+        memory.evictAll()
+        directory.listFiles()?.forEach { check(it.delete() || !it.exists()) { "Could not delete cached lyrics" } }
+    }
 
     @Synchronized fun read(key: String): CachedLyrics? {
         memory[key]?.let { return it }
@@ -36,7 +50,8 @@ internal class LyricsCache(private val directory: File) {
         }.getOrNull()
     }
 
-    @Synchronized fun write(key: String, value: CachedLyrics, replace: Boolean = false): CachedLyrics {
+    @Synchronized fun write(key: String, value: CachedLyrics, replace: Boolean = false, generation: Long = this.generation): CachedLyrics {
+        if (generation != this.generation) return value
         val previous = read(key)
         val stored = if (!replace && previous != null && previous.document.quality > value.document.quality)
             CachedLyrics(previous.document, maxOf(previous.checkedAt, value.checkedAt)) else value

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 72 72">
+  <title>Veloce app icon</title>
+  <defs>
+    <linearGradient id="graphite" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#36393e"/>
+      <stop offset="1" stop-color="#111214"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#graphite)" d="M0 0H72V72H0Z"/>
+  <path transform="translate(7.2 7.2) scale(2.4)" fill="#f3f2f0" d="M4.25 3.5C3.2 3.5 2.54 4.6 3.02 5.54L10.2 19.45C10.95 20.9 13.05 20.9 13.8 19.45L20.98 5.54C21.46 4.6 20.8 3.5 19.75 3.5H16.56C16.02 3.5 15.54 3.82 15.32 4.31L12 11.84L8.68 4.31C8.46 3.82 7.98 3.5 7.44 3.5Z"/>
+</svg>

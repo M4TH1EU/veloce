@@ -1,6 +1,5 @@
 package ch.broillet.veloce.hosting
 
-import android.text.format.DateFormat
 import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.car.app.navigation.model.TravelEstimate
 import androidx.compose.foundation.layout.*
@@ -14,6 +13,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -22,6 +22,8 @@ import ch.broillet.veloce.ui.CarSymbol
 import ch.broillet.veloce.ui.GlassIconButton
 import ch.broillet.veloce.ui.GlassSurface
 import ch.broillet.veloce.ui.HostNotice
+import ch.broillet.veloce.ui.LocalAppSettings
+import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.SimpleTimeZone
 
@@ -58,8 +60,10 @@ internal fun MapOverviewContent(template: NavigationTemplate, host: CarAppHost, 
 @Composable
 private fun MapTripSummary(estimate: TravelEstimate?, navigating: Boolean, stop: () -> Unit, modifier: Modifier) {
     val context = LocalContext.current
+    val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(context)
+    val locale = LocalConfiguration.current.locales[0]
     val arrival = estimate?.arrivalTimeAtDestination?.let {
-        DateFormat.getTimeFormat(context).apply {
+        SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm a", locale).apply {
             timeZone = SimpleTimeZone(it.zoneOffsetSeconds * 1_000, it.zoneShortName.orEmpty())
         }.format(Date(it.timeSinceEpochMillis))
     }
