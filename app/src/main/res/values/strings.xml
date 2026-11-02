@@ -1,4 +1,8 @@
 <resources>
+    <string name="close_keyboard">Close keyboard</string>
+    <string name="keyboard_shift">Shift</string>
+    <string name="keyboard_delete">Delete</string>
+    <string name="keyboard_space">Space</string>
     <string name="app_name">Veloce</string>
     <string name="disconnect">Disconnect</string>
     <string name="connecting">Connecting to your car</string>
@@ -27,6 +31,7 @@
     <string name="open_player">Open full player</string>
     <string name="split_screen">Show map and audio</string>
     <string name="fullscreen_map">Show fullscreen map</string>
+    <string name="fullscreen_view">Return to full view</string>
     <string name="choose_audio_app">Choose audio app</string>
     <string name="no_playback">Nothing playing yet</string>
     <string name="no_audio_apps">No audio apps to show. Install a compatible app or show it in Veloce on your phone.</string>
@@ -39,7 +44,6 @@
     <string name="search">Search</string>
     <string name="no_apps">No apps to show. Install a compatible app or choose apps to show in Veloce on your phone.</string>
     <string name="stop_navigation">Stop route</string>
-    <string name="arrival_time">%1$s arrival</string>
     <string name="remaining_minutes">%1$d min</string>
     <string name="media_browse_denied">Browsing may be restricted by this app. Try Now playing; an existing session can also be controlled with notification access.</string>
     <string name="media_empty">Nothing here yet</string>

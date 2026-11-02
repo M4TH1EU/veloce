@@ -16,8 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -30,7 +28,7 @@ import ch.broillet.veloce.media.NowPlaying
 
 @Composable
 internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: LyricsRepository, control: (Long) -> Boolean,
-    seek: (Long) -> Boolean, close: () -> Unit, modifier: Modifier = Modifier) {
+    seek: (Long) -> Boolean, close: () -> Unit, modifier: Modifier = Modifier, split: (() -> Unit)? = null) {
     val query = remember(track?.title, track?.artist, track?.album, track?.durationMs) {
         LyricsTrack(track?.title.orEmpty(), track?.artist.orEmpty(), track?.album.orEmpty(), track?.durationMs ?: 0)
     }
@@ -39,13 +37,17 @@ internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: Lyr
         val state by produceState(LyricsState(), repository, query, revision) {
             repository.lyrics(query, refresh = revision > 0).collect { value = it }
         }
-        Column(modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ArtworkImage(artwork, Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)))
-                Text(track?.title ?: stringResource(R.string.now_playing), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                PlaybackControls(track, { control(it) }, size = 48.dp)
-                GlassIconButton(CarSymbol.Close, stringResource(R.string.close_lyrics), close, size = 48.dp, iconSize = 24.dp)
+                ArtworkImage(artwork, Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)))
+                Column(Modifier.weight(1f)) {
+                    Text(track?.title ?: stringResource(R.string.now_playing), style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    track?.artist?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+                split?.let { GlassIconButton(CarSymbol.SplitScreen, stringResource(R.string.split_screen), it, size = 60.dp) }
+                GlassIconButton(CarSymbol.Close, stringResource(R.string.close_lyrics), close, size = 60.dp, iconSize = 30.dp)
             }
             val document = state.document
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -55,19 +57,23 @@ internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: Lyr
                         verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         if (state.loading) CircularProgressIndicator()
                         Text(stringResource(if (state.loading) R.string.finding_lyrics else R.string.no_lyrics), style = MaterialTheme.typography.titleLarge)
-                        if (!state.loading) GlassIconButton(CarSymbol.Refresh, stringResource(R.string.retry), { revision++ })
                     }
                     else -> LyricsLines(document, track, seek)
                 }
             }
-            Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().height(68.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val kind = when (document?.quality) { 3 -> R.string.word_synced; 2 -> R.string.line_synced; else -> R.string.plain_lyrics }
-                Text(document?.let { if (it.instrumental) it.source else "${it.source} · ${stringResource(kind)}" }.orEmpty(), Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (state.loading && document != null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                val refresh = stringResource(R.string.refresh)
-                if (document != null) IconButton({ revision++ }, Modifier.size(40.dp).semantics { contentDescription = refresh }) {
-                    CarGlyph(CarSymbol.Refresh, Modifier.size(22.dp), MaterialTheme.colorScheme.primary)
+                Box(Modifier.weight(1f)) {
+                    Text(document?.let { if (it.instrumental) it.source else "${it.source} · ${stringResource(kind)}" }.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PlaybackControls(track, { control(it) }, size = 64.dp, playSize = 68.dp)
+                }
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                    if (state.loading && document != null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CarRefreshButton({ revision++ }, enabled = !state.loading)
                 }
             }
         }

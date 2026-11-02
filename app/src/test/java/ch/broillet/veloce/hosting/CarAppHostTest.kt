@@ -101,12 +101,17 @@ class CarAppHostTest {
     }
 
     @Test fun hostRejectionIsVisibleAndUnbinds() {
+        var returnedHome = false
+        host.close()
+        host = CarAppHost(RuntimeEnvironment.getApplication(), host.app, {}, logs::add, home = { returnedHome = true })
         endpoint.rejectHandshake = true
         host.connect()
         await { host.error != null }
         assertTrue(host.error!!.contains("Unknown host"))
         assertFalse("create" in endpoint.calls)
         assertTrue(logs.any { "Unknown host" in it })
+        host.back()
+        assertTrue(returnedHome)
     }
 
     @Test fun nativeBackActionsCanUnwindMultipleHostedScreens() {
@@ -197,6 +202,56 @@ class CarAppHostTest {
             await { retained.navigating }
             assertFalse(workspace.splitScreen)
             assertFalse(context.getSharedPreferences("launcher", Application.MODE_PRIVATE).getBoolean("split_screen", true))
+            assertSame(retained, workspace.host)
+            assertEquals(1, endpoint.calls.count { it == "create" })
+        } finally { workspace.close() }
+    }
+
+    @Test fun finishingABackgroundMapDoesNotDismissThePlayerOrLyrics() {
+        val navigation = CarNavigation()
+        val workspace = CarWorkspace(RuntimeEnvironment.getApplication(), navigation, logs::add)
+        try {
+            workspace.open(host.app)
+            await { workspace.host?.template != null }
+            workspace.setSplitLayout(false)
+            navigation.player = true
+            navigation.lyrics = true
+            workspace.updateVisibility()
+            await { "stop" in endpoint.calls }
+            endpoint.carHost.finish()
+            await { workspace.host == null }
+            assertTrue(navigation.player)
+            assertTrue(navigation.lyrics)
+            assertNull(navigation.selected)
+            assertTrue(logs.any { "finished (player=true, lyrics=true" in it })
+        } finally { workspace.close() }
+    }
+
+    @Test fun dashboardOpensAMapWithoutARouteAndRetainsTheMediaScreen() {
+        val navigation = CarNavigation()
+        val music = host.app.copy(component = ComponentName(host.app.component.packageName, "Music"), kind = AppKind.AUDIO)
+        navigation.selected = music
+        navigation.player = true
+        val workspace = CarWorkspace(RuntimeEnvironment.getApplication(), navigation, logs::add)
+        try {
+            workspace.openDashboard(host.app)
+            val retained = workspace.host!!
+            await { retained.template != null }
+            assertTrue(navigation.dashboard)
+            assertFalse(retained.navigating)
+            assertSame(music, navigation.selected)
+            assertTrue(navigation.player)
+            assertFalse("stop" in endpoint.calls)
+            INavigationHost.Stub.asInterface(endpoint.carHost.getHost(CarContext.NAVIGATION_SERVICE)).navigationStarted()
+            await { retained.navigating }
+            assertTrue(navigation.dashboard)
+            workspace.setSplitLayout(false)
+            workspace.updateVisibility()
+            await { "stop" in endpoint.calls }
+            assertSame(music, navigation.selected)
+            assertTrue(navigation.player)
+            workspace.openDashboard(host.app)
+            await { endpoint.calls.count { it == "resume" } == 2 }
             assertSame(retained, workspace.host)
             assertEquals(1, endpoint.calls.count { it == "create" })
         } finally { workspace.close() }

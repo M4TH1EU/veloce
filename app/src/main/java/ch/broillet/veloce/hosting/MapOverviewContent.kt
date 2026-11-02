@@ -2,10 +2,13 @@ package ch.broillet.veloce.hosting
 
 import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.car.app.navigation.model.TravelEstimate
+import androidx.car.app.navigation.model.RoutingInfo
+import androidx.car.app.navigation.model.MessageInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,16 +31,18 @@ import java.util.Date
 import java.util.SimpleTimeZone
 
 @Composable
-internal fun MapOverviewContent(template: NavigationTemplate, host: CarAppHost, modifier: Modifier,
+internal fun MapOverviewContent(template: NavigationTemplate?, host: CarAppHost, modifier: Modifier,
     insets: PaddingValues, mapScene: MapScene?) {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
-    val travel = template.destinationTravelEstimate
+    val travel = template?.destinationTravelEstimate
     val showFooter = travel != null || host.navigating
-    var footerHeight by remember { mutableStateOf(80.dp) }
+    val showHeader = host.notice != null || template?.navigationInfo != null
+    var headerHeight by remember { mutableStateOf(0.dp) }
+    var footerHeight by remember { mutableStateOf(56.dp) }
     val area = PaddingValues(
         start = insets.calculateStartPadding(direction),
-        top = insets.calculateTopPadding() + if (host.notice != null) 76.dp else 0.dp,
+        top = insets.calculateTopPadding() + if (showHeader) headerHeight + 12.dp else 0.dp,
         end = insets.calculateEndPadding(direction),
         bottom = insets.calculateBottomPadding() + if (showFooter) footerHeight + 12.dp else 0.dp,
     )
@@ -50,9 +55,40 @@ internal fun MapOverviewContent(template: NavigationTemplate, host: CarAppHost, 
             mapScene.panEnd = {}
         }
         Box(Modifier.fillMaxSize().padding(insets)) {
-            host.notice?.let { HostNotice(it, host::dismissNotice, Modifier.align(Alignment.TopCenter).fillMaxWidth()) }
+            if (showHeader) Column(Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .onSizeChanged { headerHeight = with(density) { it.height.toDp() } }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                host.notice?.let { HostNotice(it, host::dismissNotice, Modifier.fillMaxWidth()) }
+                template?.let { CompactDirections(it, host) }
+            }
             if (showFooter) MapTripSummary(travel, host.navigating, host::stopNavigation,
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { footerHeight = with(density) { it.height.toDp() } })
+        }
+    }
+}
+
+@Composable
+private fun CompactDirections(template: NavigationTemplate, host: CarAppHost) {
+    val info = template.navigationInfo ?: return
+    GlassSurface(Modifier.fillMaxWidth(), RoundedCornerShape(20.dp), opacity = .98f) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            when (info) {
+                is RoutingInfo -> {
+                    if (info.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CarImage(info.currentStep?.maneuver?.icon, host, Modifier.size(44.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            info.currentDistance?.let { Text(it.distance(), style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary, maxLines = 1) }
+                            val cue = info.currentStep?.cue.text().ifBlank { info.currentStep?.road.text() }
+                            if (cue.isNotBlank()) Text(cue, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                is MessageInfo -> {
+                    Text(info.title.text(), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (info.text.text().isNotBlank()) Text(info.text.text(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }
@@ -68,18 +104,14 @@ private fun MapTripSummary(estimate: TravelEstimate?, navigating: Boolean, stop:
         }.format(Date(it.timeSinceEpochMillis))
     }
     val remaining = estimate?.remainingTimeSeconds?.takeIf { it >= 0 }?.let { stringResource(R.string.remaining_minutes, (it + 59) / 60) }
-    val detail = listOfNotNull(remaining?.takeIf { arrival != null }, estimate?.remainingDistance.distance().takeIf { it.isNotBlank() }).joinToString(" · ")
+    val summary = listOfNotNull(remaining, estimate?.remainingDistance.distance().takeIf { it.isNotBlank() }, arrival).joinToString(" · ")
     GlassSurface(modifier, RoundedCornerShape(20.dp), opacity = .96f) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(arrival?.let { stringResource(R.string.arrival_time, it) } ?: remaining ?: stringResource(R.string.navigation),
-                    style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (navigating) GlassIconButton(CarSymbol.Close, stringResource(R.string.stop_navigation), stop, size = 56.dp, opacity = .12f)
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(summary.ifBlank { stringResource(R.string.navigation) }, Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (navigating) GlassIconButton(CarSymbol.Close, stringResource(R.string.stop_navigation), stop, size = 48.dp, iconSize = 26.dp, opacity = .12f)
         }
     }
 }

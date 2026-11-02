@@ -58,14 +58,14 @@ internal fun CarAppContent(host: CarAppHost, home: () -> Unit, modifier: Modifie
             val failure = host.error
             val template = host.template
             when {
-                failure != null -> Column(Modifier.fillMaxSize().padding(mapInsets).padding(16.dp), verticalArrangement = Arrangement.Center) {
+                failure != null -> Column(Modifier.fillMaxSize().padding(mapInsets).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
                     Text("Could not open ${host.app.label}", style = MaterialTheme.typography.titleLarge)
                     Text(failure, maxLines = 5, overflow = TextOverflow.Ellipsis)
                     Text("Check the app’s host-validation patch and Car App Library compatibility. Details are in the connection log.")
                     CarTextButton("Home", home)
                 }
                 template == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                mapOverview && template is NavigationTemplate -> MapOverviewContent(template, host, Modifier.fillMaxSize(), mapInsets, mapScene)
+                mapOverview -> MapOverviewContent(template as? NavigationTemplate, host, Modifier.fillMaxSize(), mapInsets, mapScene)
                 else -> TemplateContent(template, host, Modifier.fillMaxSize(), mapInsets, !headerInToolbar, bottomOverlay, mapScene)
             }
         }
@@ -510,7 +510,7 @@ private fun ActionLabel(action: Action, host: CarAppHost) {
 }
 
 @Composable
-private fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modifier) {
+internal fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modifier) {
     if (icon == null) return
     val context = LocalContext.current
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, icon) {

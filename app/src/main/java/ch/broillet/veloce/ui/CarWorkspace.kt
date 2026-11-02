@@ -15,6 +15,7 @@ class CarWorkspace(
     private val context: Context,
     private val navigation: CarNavigation,
     private val log: (String) -> Unit,
+    private val canSplit: Boolean = true,
 ) : Closeable {
     private val preferences = context.applicationContext.getSharedPreferences("launcher", Context.MODE_PRIVATE)
     var splitScreen by mutableStateOf(preferences.getBoolean("split_screen", true))
@@ -31,33 +32,56 @@ class CarWorkspace(
             library?.close()
             library = MediaLibrary(context, app, log).also { it.connect() }
         }
-        if (app.kind != AppKind.AUDIO && (host?.app?.component != app.component || host?.error != null)) {
-            host?.close()
-            lateinit var opened: CarAppHost
-            opened = CarAppHost(context, app, {
-                if (host === opened) {
-                    host = null
-                    opened.close()
-                    if (navigation.selected?.component == app.component) navigation.home()
-                }
-            }, log, navigation::home, onNavigationStarted = { if (host === opened) setSplitLayout(false) })
-            host = opened
-            opened.setVisible(navigation.projected)
-            opened.connect()
-        }
+        if (app.kind != AppKind.AUDIO) openHost(app)
         navigation.selected = app
         navigation.player = false
         navigation.notificationsOpen = false
         navigation.lyrics = false
+        navigation.dashboard = canSplit && app.kind == AppKind.MAP && splitScreen
+        updateVisibility()
+    }
+
+    private fun openHost(app: CarApp) {
+        if (host?.app?.component != app.component || host?.error != null) {
+            host?.close()
+            lateinit var opened: CarAppHost
+            opened = CarAppHost(context, app, {
+                if (host === opened) {
+                    log("Car app ${app.label} finished (player=${navigation.player}, lyrics=${navigation.lyrics}, dashboard=${navigation.dashboard})")
+                    host = null
+                    opened.close()
+                    navigation.dashboard = false
+                    if (navigation.selected?.component == app.component) {
+                        if (!navigation.player && !navigation.notificationsOpen) navigation.home()
+                        else navigation.selected = null
+                    }
+                }
+            }, log, navigation::home, onNavigationStarted = {
+                if (host === opened && navigation.selected?.component == app.component && !navigation.player && !navigation.notificationsOpen) setSplitLayout(false)
+            })
+            host = opened
+            opened.setVisible(navigation.projected)
+            opened.connect()
+        }
+    }
+
+    fun openDashboard(map: CarApp) {
+        check(!closed && canSplit && map.kind == AppKind.MAP)
+        openHost(map)
+        navigation.notificationsOpen = false
+        navigation.lyrics = false
+        setSplitLayout(true)
         updateVisibility()
     }
 
     fun updateVisibility() {
-        host?.setVisible(navigation.projected && navigation.selected?.component == host?.app?.component && !navigation.player && !navigation.notificationsOpen)
+        host?.setVisible(navigation.projected && !navigation.notificationsOpen &&
+            (navigation.dashboard || (navigation.selected?.component == host?.app?.component && !navigation.player)))
     }
 
     fun setSplitLayout(value: Boolean) {
         splitScreen = value
+        navigation.dashboard = value && canSplit && host?.app?.kind == AppKind.MAP
         preferences.edit { putBoolean("split_screen", value) }
     }
 

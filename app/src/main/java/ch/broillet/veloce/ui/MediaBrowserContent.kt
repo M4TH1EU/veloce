@@ -39,7 +39,6 @@ fun MediaLibraryContent(library: MediaLibrary, showPlayer: () -> Unit, modifier:
                 Text(stringResource(R.string.media_browse_denied), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CarTextButton(stringResource(R.string.now_playing), showPlayer, symbol = CarSymbol.Music)
-                    if (page.folder != null) GlassIconButton(CarSymbol.Refresh, stringResource(R.string.retry), library::refresh)
                 }
             }
             page.entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -48,7 +47,7 @@ fun MediaLibraryContent(library: MediaLibrary, showPlayer: () -> Unit, modifier:
             else -> {
                 val numbered = page.entries.all { !it.browsable && it.presentation == MediaPresentation.LIST }
                 LazyVerticalGrid(GridCells.Adaptive(124.dp), Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 56.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     itemsIndexed(page.entries, key = { index, entry -> "$index:${entry.id}" }, span = { _, entry ->
                         GridItemSpan(if (entry.presentation == MediaPresentation.LIST) maxLineSpan else 1)

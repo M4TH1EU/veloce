@@ -257,6 +257,7 @@ class CarAppHost(
     }
 
     fun back() {
+        if (closed || error != null) { home(); return }
         val endpoint = manager ?: return
         launch { appCalls.withLock { request { endpoint.onBackPressed(it) } } }
     }

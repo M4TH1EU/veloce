@@ -20,5 +20,6 @@ class VeloceApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         LocalAudioState.recover(this, connections::log)
+        wirelessAuto.restore()
     }
 }

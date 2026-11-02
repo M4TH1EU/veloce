@@ -43,29 +43,42 @@ internal class WirelessConnector(context: Context, private val address: String, 
 
     fun open(): CarLink {
         resources.own(Closeable { ready.completeExceptionally(IOException("Wireless connection closed")) })
-        val device = bluetooth.adapter?.bondedDevices?.firstOrNull { it.address == address }
+        val device = bluetooth.adapter?.bondedDevices?.firstOrNull { it.address.equals(address, true) }
             ?: throw IOException("Pair the phone with the car in Android's Bluetooth settings first")
         status("Reaching the car over Bluetooth")
         val socket = resources.own(device.createRfcommSocketToServiceRecord(service))
+        val server = resources.own(bluetooth.adapter.listenUsingRfcommWithServiceRecord("Android Auto", service))
+        val selected = CompletableFuture<BluetoothSocket>()
+        resources.own(Closeable { selected.completeExceptionally(IOException("Wireless connection cancelled")) })
+        thread(name = "veloce-wireless-listen") {
+            try {
+                while (!selected.isDone) {
+                    val incoming = resources.own(server.accept(120_000))
+                    if (!incoming.remoteDevice.address.equals(address, true)) {
+                        incoming.close()
+                        continue
+                    }
+                    if (selected.complete(incoming)) socket.close() else incoming.close()
+                    break
+                }
+            } catch (error: IOException) {
+                selected.completeExceptionally(error)
+            }
+        }
         val timer = Executors.newSingleThreadScheduledExecutor()
         val timeout = timer.schedule({ runCatching { socket.close() } }, 8, TimeUnit.SECONDS)
-        val connected = try {
+        try {
             socket.connect()
-            socket
+            if (!selected.complete(socket)) socket.close()
         } catch (_: IOException) {
             socket.close()
             if (resources.isClosed) throw IOException("Wireless connection cancelled")
-            status("Waiting for the car · reconnect the phone from the car's Bluetooth menu if needed")
-            val server = resources.own(bluetooth.adapter.listenUsingRfcommWithServiceRecord("Android Auto", service))
-            try {
-                val incoming = resources.own(server.accept(120_000))
-                if (incoming.remoteDevice.address != address) throw IOException("A different Bluetooth device attempted to connect")
-                incoming
-            } finally { server.close() }
+            if (!selected.isDone) status("Waiting for the car · reconnect the phone from the car's Bluetooth menu if needed")
         } finally {
             timeout.cancel(false)
             timer.shutdownNow()
         }
+        val connected = try { selected.get(125, TimeUnit.SECONDS) } finally { server.close() }
         thread(name = "veloce-wireless-bootstrap") {
             try { bootstrap(connected) } catch (error: Exception) {
                 if (ready.completeExceptionally(error)) resources.close()

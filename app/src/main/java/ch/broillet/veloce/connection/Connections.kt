@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class ConnectionState(
     val active: Boolean = false,
@@ -56,8 +57,9 @@ class Connections(private val context: Context) {
     fun usb(accessory: UsbAccessory) = start(Intent(context, ConnectionService::class.java).putExtra("usb", accessory))
     val lastWireless: String? get() = preferences.getString("wireless", null)
     fun wireless(address: String) {
-        preferences.edit { putString("wireless", address) }
-        start(Intent(context, ConnectionService::class.java).putExtra("wireless", address))
+        val canonical = address.uppercase(Locale.ROOT)
+        preferences.edit { putString("wireless", canonical) }
+        start(Intent(context, ConnectionService::class.java).putExtra("wireless", canonical))
     }
     fun disconnect() { context.startService(Intent(context, ConnectionService::class.java).setAction("disconnect")) }
     fun stopAudio() { context.startService(Intent(context, ConnectionService::class.java).setAction("audio-stop")) }

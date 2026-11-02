@@ -2,6 +2,8 @@ package ch.broillet.veloce.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -48,7 +50,6 @@ import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.text.format.DateFormat
 import androidx.car.app.model.SearchTemplate
-import androidx.car.app.navigation.model.NavigationTemplate
 import ch.broillet.veloce.media.ActiveMedia
 import ch.broillet.veloce.media.NowPlaying
 import ch.broillet.veloce.media.MediaLibrary
@@ -64,11 +65,15 @@ class CarNavigation {
     var projected by mutableStateOf(true)
     var notificationsOpen by mutableStateOf(false)
     var lyrics by mutableStateOf(false)
+    var dashboard by mutableStateOf(false)
     var appBack: (() -> Unit)? = null
+    var dismissKeyboard: (() -> Unit)? = null
     var mediaKey: ((Int) -> Unit)? = null
-    fun home() { selected = null; player = false; notificationsOpen = false; lyrics = false }
+    fun home() { dismissKeyboard?.invoke(); selected = null; player = false; notificationsOpen = false; lyrics = false; dashboard = false }
     fun back(exit: () -> Unit) {
+        dismissKeyboard?.let { it(); return }
         if (notificationsOpen) { notificationsOpen = false; return }
+        if (dashboard) { dashboard = false; return }
         if (lyrics) { lyrics = false; return }
         if (player) { player = false; return }
         val hostedBack = appBack
@@ -81,7 +86,7 @@ fun CarLauncher(spec: ScreenSpec, apps: List<CarApp>, navigation: CarNavigation,
     val app = LocalContext.current.applicationContext as VeloceApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
     val visibleApps = remember(apps, settings.hiddenAppPackages) { apps.visibleInCar(settings) }
-    CarTheme(settings) { CarLauncherContent(spec, visibleApps, navigation, media, exit) }
+    CarTheme(settings) { CarKeyboardHost(navigation) { CarLauncherContent(spec, visibleApps, navigation, media, exit) } }
 }
 
 @Composable
@@ -90,16 +95,20 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
     val app = context.applicationContext as VeloceApplication
     val notifications = app.notifications
     val notices by notifications.notices.collectAsStateWithLifecycle()
-    val workspace = remember(context, navigation) {
-        CarWorkspace(context, navigation, app.connections::log)
+    val density = LocalDensity.current
+    val displayWidth = with(density) { (spec.width - spec.cropX).toDp() }
+    val displayHeight = with(density) { (spec.height - spec.cropY).toDp() }
+    val canSplit = displayWidth >= 800.dp && displayHeight >= 420.dp && displayWidth > displayHeight
+    val workspace = remember(context, navigation, canSplit) {
+        CarWorkspace(context, navigation, app.connections::log, canSplit)
     }
     DisposableEffect(workspace) { onDispose { workspace.close() } }
     val selected = navigation.selected
     val host = workspace.host
-    val selectedHost = host?.takeIf { selected?.component == it.app.component }
+    val selectedHost = host?.takeIf { navigation.dashboard || selected?.component == it.app.component }
     val library = workspace.library
-    val playerVisible = navigation.player && !navigation.notificationsOpen
-    val appVisible = !navigation.player && !navigation.notificationsOpen
+    val playerVisible = navigation.player && !navigation.notificationsOpen && !navigation.dashboard
+    val appVisible = (!navigation.player || navigation.dashboard) && !navigation.notificationsOpen
     val active by media.nowPlaying.collectAsStateWithLifecycle()
     val tracks by media.tracks.collectAsStateWithLifecycle()
     val currentTrack = active?.takeIf { it.playing } ?: library?.nowPlaying?.takeIf { it.playing } ?: active ?: library?.nowPlaying
@@ -110,11 +119,12 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
             ?: library?.nowPlaying
     } else currentTrack
     val libraryPlayer = library?.takeIf { playerTrack != null && playerTrack === it.nowPlaying }
-    val splitScreen = workspace.splitScreen
     var choosingApp by remember { mutableStateOf<AppKind?>(null) }
+    var choosingDashboard by remember { mutableStateOf(false) }
     val maps = remember(apps) { apps.filter { it.kind == AppKind.MAP } }
     val audioApps = remember(apps) { apps.filter { it.kind == AppKind.AUDIO } }
     val openMap: () -> Unit = {
+        choosingDashboard = false
         val previous = maps.firstOrNull { it.component == host?.app?.component }
         when {
             previous != null -> workspace.open(previous)
@@ -128,8 +138,10 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
             else navigation.home()
         }
         navigation.player = true
+        navigation.dashboard = false
     }
     val openAudio: () -> Unit = {
+        choosingDashboard = false
         val source = library?.app?.takeIf { it in audioApps && it.component.packageName == currentTrack?.packageName }
             ?: audioApps.firstOrNull { it.component.packageName == currentTrack?.packageName }
         when {
@@ -138,12 +150,24 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
             else -> choosingApp = AppKind.AUDIO
         }
     }
+    val toggleDashboard: () -> Unit = {
+        if (navigation.dashboard && !navigation.notificationsOpen) workspace.setSplitLayout(false)
+        else {
+            val map = maps.firstOrNull { it.component == host?.app?.component } ?: maps.singleOrNull()
+            if (map != null) workspace.openDashboard(map)
+            else { choosingDashboard = true; choosingApp = AppKind.MAP }
+        }
+    }
     val control: (Long) -> Boolean = { action ->
         libraryPlayer?.control(action) ?: media.control(action, playerTrack?.packageName)
     }
     val miniLibrary = library?.takeIf { currentTrack != null && currentTrack === it.nowPlaying }
     val miniControl: (Long) -> Boolean = { action -> miniLibrary?.control(action) ?: media.control(action, currentTrack?.packageName) }
-    LaunchedEffect(host, selected, navigation.player, navigation.projected, navigation.notificationsOpen) { workspace.updateVisibility() }
+    LaunchedEffect(host, selected, navigation.player, navigation.dashboard, navigation.projected, navigation.notificationsOpen) { workspace.updateVisibility() }
+    LaunchedEffect(navigation) {
+        snapshotFlow { "${navigation.selected?.label ?: "Home"} · player=${navigation.player}, lyrics=${navigation.lyrics}, dashboard=${navigation.dashboard}, notifications=${navigation.notificationsOpen}" }
+            .collect { app.connections.log("Car screen: $it") }
+    }
     SideEffect {
         navigation.mediaKey = { media.key(it, workspace.library) }
         navigation.appBack = when {
@@ -154,14 +178,15 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
     }
     val horizontal = with(LocalDensity.current) { (spec.cropX / 2).toDp() }
     val vertical = with(LocalDensity.current) { (spec.cropY / 2).toDp() }
-    val mapVisible = appVisible && selectedHost != null && selectedHost.template.hasMapSurface()
+    val mapVisible = appVisible && selectedHost != null && selectedHost.error == null &&
+        (selectedHost.template.hasMapSurface() || navigation.dashboard)
     val mapScene = remember(host) { MapScene() }
     val mapBackdrop = appVisible && selectedHost?.app?.kind == AppKind.MAP && selectedHost.error == null
     val denseChrome = mapVisible || mapBackdrop
     val album = rememberArtwork(playerTrack?.artwork.takeIf { playerVisible })
     val titlePackage = if (navigation.player) playerTrack?.packageName else selected?.component?.packageName
     val notice = selectedHost?.notice?.takeIf { appVisible }
-    val browser = library?.takeIf { selected?.kind == AppKind.AUDIO && appVisible }
+    val browser = library?.takeIf { selected?.kind == AppKind.AUDIO && appVisible && !navigation.dashboard }
     val hostedPage = selectedHost?.takeIf { appVisible && !mapVisible }
     val searchInToolbar = browser?.supportsSearch == true || hostedPage?.template is SearchTemplate
     var mediaQuery by remember(library) { mutableStateOf("") }
@@ -172,13 +197,12 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
         Box(Modifier.fillMaxSize().cabinBackground()) {
             if (playerVisible && LocalAppSettings.current.artworkBackground) AlbumBackdrop(album, Modifier.fillMaxSize())
             BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = horizontal, vertical = vertical)) {
-                val canSplit = maxWidth >= 800.dp && maxHeight >= 420.dp && maxWidth > maxHeight
-                val splitAvailable = canSplit && mapVisible && selected?.kind == AppKind.MAP && selectedHost?.template is NavigationTemplate && selectedHost.error == null
-                val splitVisible = splitAvailable && splitScreen
+                val splitVisible = canSplit && navigation.dashboard && mapVisible
                 val mediaWidth = ((maxWidth - 120.dp) * .32f).coerceIn(240.dp, 340.dp)
                 val showPill = !playerVisible && currentTrack != null && !splitVisible
-                if (lyricsVisible) LyricsContent(playerTrack, album, app.lyrics, control,
-                    { libraryPlayer?.seekTo(it) ?: media.seekTo(it, playerTrack?.packageName) }, { navigation.lyrics = false })
+                 if (lyricsVisible) LyricsContent(playerTrack, album, app.lyrics, control,
+                     { libraryPlayer?.seekTo(it) ?: media.seekTo(it, playerTrack?.packageName) }, { navigation.lyrics = false },
+                     split = toggleDashboard.takeIf { canSplit && maps.isNotEmpty() })
                 else {
                     val mapFrame = if (splitVisible) Modifier.fillMaxSize()
                         .padding(start = 96.dp, top = 12.dp, end = mediaWidth + 24.dp, bottom = 12.dp)
@@ -194,7 +218,7 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
                         if (splitVisible) {
                             val label = stringResource(R.string.fullscreen_map)
                             Box(Modifier.matchParentSize().semantics { contentDescription = label }
-                                .clickable(role = Role.Button, onClickLabel = label) { workspace.setSplitLayout(false) })
+                                .clickable(role = Role.Button, onClickLabel = label) { workspace.open(selectedHost.app); workspace.setSplitLayout(false) })
                         }
                         if (mapVisible) key(selectedHost) {
                             CarAppContent(selectedHost, navigation::home, Modifier.fillMaxSize(),
@@ -228,14 +252,10 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
                                         else -> stringResource(R.string.your_apps)
                                     }, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                if (browser != null) {
-                                    if (browser.supportsSearch) {
-                                        val search = { browser.search(mediaQuery) }
-                                        CarSearchField(mediaQuery, { mediaQuery = it.take(200) }, stringResource(R.string.search), search, Modifier.weight(1f))
-                                        GlassIconButton(CarSymbol.Search, stringResource(R.string.search), search, enabled = mediaQuery.isNotBlank())
-                                    }
-                                    GlassIconButton(CarSymbol.Refresh, stringResource(R.string.refresh), browser::refresh,
-                                        enabled = browser.page.folder != null && !browser.page.loading, size = 56.dp)
+                                if (browser?.supportsSearch == true) {
+                                    val search = { browser.search(mediaQuery) }
+                                    CarSearchField(mediaQuery, { mediaQuery = it.take(200) }, stringResource(R.string.search), browser::search, Modifier.weight(1f))
+                                    GlassIconButton(CarSymbol.Search, stringResource(R.string.search), search, enabled = mediaQuery.isNotBlank())
                                 }
                                 if (hostedPage != null) HostedToolbarActions(hostedPage)
                                 if (notice != null) HostNotice(notice, host::dismissNotice, Modifier.widthIn(max = if (searchInToolbar) 208.dp else 280.dp))
@@ -269,11 +289,14 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
                             }
                         } else Spacer(Modifier.weight(1f))
                         if (!playerVisible && (showPill || browsePaging)) MediaFooter(currentTrack.takeIf { showPill }, browser, openPlayer, miniControl,
-                            Modifier.align(Alignment.CenterHorizontally).padding(end = if (mapVisible) 80.dp else 0.dp), if (denseChrome) .96f else .64f)
+                            Modifier.align(Alignment.CenterHorizontally).padding(end = if (mapVisible) 80.dp else if (browser != null) 64.dp else 0.dp), if (denseChrome) .96f else .64f)
                     }
                     CarSidebar(navigation, notices.size, openMap, denseChrome, Modifier
                         .align(Alignment.CenterStart).padding(vertical = 8.dp).width(84.dp).fillMaxHeight(), splitVisible,
-                        if (splitAvailable) ({ workspace.setSplitLayout(!splitScreen) }) else null)
+                        if (canSplit && maps.isNotEmpty()) toggleDashboard else null)
+                    if (browser != null) CarRefreshButton(browser::refresh,
+                        Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 16.dp),
+                        enabled = browser.page.folder != null && !browser.page.loading)
                 }
                 if (navigation.projected && !navigation.notificationsOpen && LocalAppSettings.current.notificationBanners) {
                     CarNotificationBanner(notifications, { navigation.notificationsOpen = true },
@@ -283,14 +306,22 @@ private fun CarLauncherContent(spec: ScreenSpec, apps: List<CarApp>, navigation:
         }
         choosingApp?.let { kind ->
             val choices = if (kind == AppKind.MAP) maps else audioApps
-            AlertDialog(onDismissRequest = { choosingApp = null },
-                title = { Text(stringResource(if (kind == AppKind.MAP) R.string.navigation else R.string.choose_audio_app)) },
-                text = {
-                    if (choices.isEmpty()) Text(stringResource(if (kind == AppKind.MAP) R.string.no_navigation_apps else R.string.no_audio_apps))
-                    else Column { choices.forEach { choice ->
-                        TextButton(onClick = { choosingApp = null; workspace.open(choice) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(choice.label) }
-                    } }
-                }, confirmButton = { TextButton(onClick = { choosingApp = null }) { Text(stringResource(R.string.cancel)) } })
+            CarOverlay({ choosingApp = null }) {
+                Surface(Modifier.padding(24.dp).widthIn(max = 560.dp).fillMaxWidth(), shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text(stringResource(if (kind == AppKind.MAP) R.string.navigation else R.string.choose_audio_app), style = MaterialTheme.typography.headlineSmall)
+                        if (choices.isEmpty()) Text(stringResource(if (kind == AppKind.MAP) R.string.no_navigation_apps else R.string.no_audio_apps))
+                        else Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { choices.forEach { choice ->
+                            TextButton(onClick = {
+                                choosingApp = null
+                                if (choosingDashboard) workspace.openDashboard(choice) else workspace.open(choice)
+                            }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(choice.label) }
+                        } }
+                        TextButton(onClick = { choosingApp = null }, modifier = Modifier.align(Alignment.End)) { Text(stringResource(R.string.cancel)) }
+                    }
+                }
+            }
         }
     }
 }
@@ -302,25 +333,28 @@ private fun CarSidebar(navigation: CarNavigation, count: Int, openMap: () -> Uni
         opacity = if (dense) .65f else .42f) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val compact = maxHeight < 480.dp
-            val buttonSize = if (compact) 56.dp else 60.dp
-            Column(Modifier.fillMaxSize().padding(vertical = if (compact) 8.dp else 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            val buttonSize = if (maxHeight < 400.dp) 60.dp else if (compact) 68.dp else 72.dp
+            Column(Modifier.fillMaxSize().padding(vertical = if (compact) 8.dp else 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 10.dp)) {
                 GlassIconButton(CarSymbol.Home, stringResource(R.string.home), navigation::home,
-                    selected = navigation.selected == null && !navigation.player && !navigation.notificationsOpen, size = buttonSize, opacity = .12f)
+                    selected = navigation.selected == null && !navigation.player && !navigation.notificationsOpen && !navigation.dashboard, size = buttonSize, iconSize = 32.dp, opacity = .12f)
                 GlassIconButton(CarSymbol.Navigation, stringResource(R.string.navigation), openMap,
-                    selected = navigation.selected?.kind == AppKind.MAP && !navigation.player && !navigation.notificationsOpen, size = buttonSize, opacity = .12f)
+                    selected = (navigation.dashboard || navigation.selected?.kind == AppKind.MAP && !navigation.player) && !navigation.notificationsOpen, size = buttonSize, iconSize = 32.dp, opacity = .12f)
                 Box {
                     GlassIconButton(CarSymbol.Bell, stringResource(R.string.notification_count, count),
-                        { navigation.notificationsOpen = !navigation.notificationsOpen }, selected = navigation.notificationsOpen, size = buttonSize, opacity = .12f)
+                        { navigation.notificationsOpen = !navigation.notificationsOpen }, selected = navigation.notificationsOpen, size = buttonSize, iconSize = 32.dp, opacity = .12f)
                     if (count > 0) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(8.dp)
                         .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50)))
                 }
                 if (toggleSplit != null) GlassIconButton(if (split) CarSymbol.Fullscreen else CarSymbol.SplitScreen,
-                    stringResource(if (split) R.string.fullscreen_map else R.string.split_screen), toggleSplit, size = buttonSize, opacity = .12f)
+                    stringResource(if (split) R.string.fullscreen_view else R.string.split_screen), toggleSplit, size = buttonSize, iconSize = 32.dp, opacity = .12f)
                 Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    PhoneStatus()
+                Column(Modifier.padding(horizontal = 4.dp).fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .06f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 4.dp, vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SidebarClock()
+                    PhoneStatus()
                 }
             }
         }
@@ -338,12 +372,10 @@ private fun SidebarClock() {
     }
     val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(context)
     val label = DateFormat.format(if (is24Hour) "HH:mm" else "h:mm a", clock).toString()
-    val digits = MaterialTheme.typography.titleLarge.copy(fontSize = 26.sp, lineHeight = 28.sp,
+    val digits = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 28.sp,
         fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp, fontFeatureSettings = "tnum")
-    Column(Modifier.padding(top = 2.dp).clearAndSetSemantics { contentDescription = label }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(DateFormat.format(if (is24Hour) "HH" else "hh", clock).toString(), style = digits,
-            color = MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
-        Text(DateFormat.format("mm", clock).toString(), style = digits,
+    Column(Modifier.clearAndSetSemantics { contentDescription = label }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(DateFormat.format(if (is24Hour) "HH:mm" else "h:mm", clock).toString(), style = digits,
             color = MaterialTheme.colorScheme.onSurface, maxLines = 1, softWrap = false)
         if (!is24Hour) Text(DateFormat.format("a", clock).toString(),
             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp, lineHeight = 14.sp),

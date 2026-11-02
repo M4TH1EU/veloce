@@ -2,17 +2,15 @@ package ch.broillet.veloce.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import ch.broillet.veloce.R
 
 @Composable
@@ -30,15 +28,18 @@ internal fun CarTextButton(label: String, onClick: () -> Unit, modifier: Modifie
 
 @Composable
 internal fun CarSearchField(value: String, onValueChange: (String) -> Unit, hint: String,
-    search: () -> Unit, modifier: Modifier = Modifier) {
-    GlassSurface(modifier, RoundedCornerShape(24.dp), opacity = .94f) {
-        TextField(value, onValueChange, Modifier.fillMaxWidth().heightIn(min = 64.dp), singleLine = true,
-            placeholder = { Text(hint, maxLines = 1) }, textStyle = MaterialTheme.typography.titleMedium,
-            leadingIcon = { CarGlyph(CarSymbol.Search, Modifier.size(28.dp), MaterialTheme.colorScheme.primary) },
-            shape = RoundedCornerShape(24.dp), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { search() }),
-            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
+    search: (String) -> Unit, modifier: Modifier = Modifier) {
+    val keyboard = LocalCarKeyboard.current
+    val change by rememberUpdatedState(onValueChange)
+    val submit by rememberUpdatedState(search)
+    GlassSurface(modifier, RoundedCornerShape(24.dp), opacity = .94f,
+        onClick = { keyboard(CarKeyboardRequest(value, hint, { change(it) }, { submit(it) })) }) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CarGlyph(CarSymbol.Search, Modifier.size(28.dp), MaterialTheme.colorScheme.primary)
+            Text(value.ifBlank { hint }, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 
@@ -51,5 +52,14 @@ internal fun HostNotice(message: String, dismiss: () -> Unit, modifier: Modifier
             Text(message, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             GlassIconButton(CarSymbol.Close, stringResource(R.string.dismiss), dismiss, size = 56.dp, iconSize = 24.dp)
         }
+    }
+}
+
+@Composable
+internal fun CarRefreshButton(refresh: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val label = stringResource(R.string.refresh)
+    IconButton(refresh, modifier.size(48.dp).semantics { contentDescription = label }, enabled = enabled) {
+        CarGlyph(CarSymbol.Refresh, Modifier.size(26.dp),
+            if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = .3f))
     }
 }

@@ -54,6 +54,11 @@
         </activity>
 
         <service android:name=".connection.ConnectionService" android:exported="false" android:foregroundServiceType="connectedDevice|mediaProjection" />
+        <receiver android:name=".connection.CarBluetoothReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
         <service android:name=".connection.CarPresenceService" android:exported="true" android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE">
             <intent-filter>
                 <action android:name="android.companion.CompanionDeviceService" />

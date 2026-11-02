@@ -75,7 +75,7 @@ fun CarNotificationBanner(notifications: CarNotifications, open: () -> Unit, mod
     }
     if (remaining <= 0) return
     GlassSurface(onClick = { notifications.dismissAlert(current.sequence); open() },
-        modifier = modifier.widthIn(max = 600.dp).fillMaxWidth(), selected = true) {
+        modifier = modifier.widthIn(max = 600.dp).fillMaxWidth(), selected = true, opacity = 1f) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             PackageIcon(current.notice.packageName, Modifier.size(40.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

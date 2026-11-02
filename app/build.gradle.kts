@@ -16,7 +16,10 @@ android {
     }
 
     buildFeatures { compose = true }
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { it.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+    }
 
     signingConfigs {
         providers.gradleProperty("veloce.storeFile").orNull?.let { path ->

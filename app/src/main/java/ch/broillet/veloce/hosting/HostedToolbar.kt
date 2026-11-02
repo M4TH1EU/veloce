@@ -46,10 +46,10 @@ internal fun RowScope.HostedToolbarActions(host: CarAppHost) {
 @Composable
 internal fun RowScope.HostedSearch(template: SearchTemplate, host: CarAppHost) {
     var query by remember(host, template.initialSearchText) { mutableStateOf(template.initialSearchText.orEmpty()) }
-    val search = { host.event { template.searchCallbackDelegate.sendSearchSubmitted(query, it) } }
+    val search: (String) -> Unit = { text -> host.event { template.searchCallbackDelegate.sendSearchSubmitted(text, it) } }
     CarSearchField(query, { value ->
         query = value
         host.event { template.searchCallbackDelegate.sendSearchTextChanged(value, it) }
     }, template.searchHint ?: stringResource(R.string.search), search, Modifier.weight(1f))
-    GlassIconButton(CarSymbol.Search, stringResource(R.string.search), search)
+    GlassIconButton(CarSymbol.Search, stringResource(R.string.search), { search(query) })
 }

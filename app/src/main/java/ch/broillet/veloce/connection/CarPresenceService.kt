@@ -15,7 +15,7 @@ class CarPresenceService : CompanionDeviceService() {
 
     @RequiresApi(36)
     override fun onDevicePresenceEvent(event: DevicePresenceEvent) {
-        if (event.event != DevicePresenceEvent.EVENT_BT_CONNECTED) return
+        if (event.event != DevicePresenceEvent.EVENT_BT_CONNECTED && event.event != DevicePresenceEvent.EVENT_BLE_APPEARED) return
         val info = getSystemService(CompanionDeviceManager::class.java).myAssociations.firstOrNull { it.id == event.associationId } ?: return
         info.deviceMacAddress?.toString()?.let { (application as VeloceApplication).wirelessAuto.appeared(it) }
     }
