@@ -22,14 +22,19 @@ android {
     }
 
     signingConfigs {
-        providers.gradleProperty("veloce.storeFile").orNull?.let { path ->
-            create("veloceRelease") {
-                storeFile = file(path)
-                storePassword = providers.gradleProperty("veloce.storePassword").get()
-                keyAlias = providers.gradleProperty("veloce.keyAlias").get()
-                keyPassword = providers.gradleProperty("veloce.keyPassword").get()
+        providers.environmentVariable("VELOCE_STORE_FILE")
+            .orElse(providers.gradleProperty("veloce.storeFile"))
+            .orNull?.let { path ->
+                create("veloceRelease") {
+                    storeFile = file(path)
+                    storePassword = providers.environmentVariable("VELOCE_STORE_PASSWORD")
+                        .orElse(providers.gradleProperty("veloce.storePassword")).get()
+                    keyAlias = providers.environmentVariable("VELOCE_KEY_ALIAS")
+                        .orElse(providers.gradleProperty("veloce.keyAlias")).get()
+                    keyPassword = providers.environmentVariable("VELOCE_KEY_PASSWORD")
+                        .orElse(providers.gradleProperty("veloce.keyPassword")).get()
+                }
             }
-        }
     }
 
     buildTypes {
