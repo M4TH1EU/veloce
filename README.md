@@ -27,7 +27,7 @@ is configured.
 Run these :
 ```sh
 keytool -genkeypair -keystore "<path-to-store-key>/veloce.jks" -storetype JKS -alias veloce -keyalg RSA -keysize 4096 -validity 10000
-chmod 600 "<path-to-store-key>/veloce.jks
+chmod 600 "<path-to-store-key>/veloce.jks"
 ```
 
 Put these properties in **`~/.gradle/gradle.properties`** :
