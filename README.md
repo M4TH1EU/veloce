@@ -8,6 +8,18 @@ host, media browser, and playback-audio forwarding.
 Veloce is experimental, not an official Android Auto client or a fully conformant
 Car App Library host. Compatibility depends on the phone, head unit, and apps.
 
+## Recommended optional adb setup
+
+To allow the app to work with the least friction possible, you can execute these two ADB commands:
+```sh
+adb shell appops set ch.broillet.veloce PROJECT_MEDIA allow
+adb shell pm grant ch.broillet.veloce android.permission.WRITE_SECURE_SETTINGS
+```
+
+The first preauthorizes the screen sharing necessary for non-bluetooth audio. The second
+lets Veloce temporarily disable global screen-share notification protection during
+capture and restore its previous value afterward.
+
 ## Build
 
 Open the project in Android Studio with Android SDK Platform 37 installed.
@@ -22,7 +34,7 @@ The APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 `:app:assembleRelease` builds an optimized APK, unsigned unless release signing
 is configured.
 
-### Create a stable release key
+### Signing your build
 
 Run these :
 ```sh
@@ -52,11 +64,3 @@ Navigation speech and calls are separate from playback capture.
 - `app/`: Android UI, transports, projection, app hosting, media, and notifications.
 - `protocol/`: Android-independent framing, TLS, and projection session engine.
 - [Architecture and references](docs/ARCHITECTURE.md).
-
-License selection is pending. No open-source license is granted by this repository yet.
-
-## Publishing artwork
-
-Adaptive and monochrome Android icons, splash artwork, and the in-app mark share
-the same branding. Store-ready icon and feature-graphic exports, with SVG sources,
-are in [`branding/`](branding/README.md).
