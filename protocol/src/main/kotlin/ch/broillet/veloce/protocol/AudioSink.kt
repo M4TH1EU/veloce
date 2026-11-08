@@ -74,7 +74,7 @@ class AudioSink internal constructor(
                 send(0x8001, Proto.build { number(1, id.toLong()); number(2, mode.index.toLong()) }, null)
                 streamId = id
             }
-            3 -> stop()
+            3 -> { playing = false; stop() }
             5 -> suspendStream()
             4 -> Unit // The head unit ducks its media sink.
         }

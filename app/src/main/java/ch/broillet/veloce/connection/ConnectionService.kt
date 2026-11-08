@@ -1,5 +1,7 @@
 package ch.broillet.veloce.connection
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,9 +9,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbAccessory
 import android.media.AudioManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.KeyEvent
 import ch.broillet.veloce.MainActivity
@@ -57,6 +61,7 @@ class ConnectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            "prepare" -> { current?.prepare(intent); if (current == null) stopSelf(); return START_NOT_STICKY }
             "audio" -> { current?.startAudio(intent) ?: stopSelf(); return START_NOT_STICKY }
             "audio-stop" -> { current?.stopAudio() ?: stopSelf(); return START_NOT_STICKY }
         }
@@ -79,6 +84,9 @@ class ConnectionService : Service() {
         if (usb == null && address == null) { stopSelf(); return START_NOT_STICKY }
         val attempt = Attempt(usb, address)
         current = attempt
+        app.connections.begin(attempt.id)
+        attempt.prepare()
+        requestSetup(attempt.id, audio = false)
         scope.launch {
             attempt.execute()
             if (current === attempt) {
@@ -91,8 +99,11 @@ class ConnectionService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun notification(detail: String): Notification {
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+    private fun notification(detail: String, sharing: Boolean = app.connections.state.value.audioCapturing): Notification {
+        val state = app.connections.state.value
+        val target = state.audioRequest?.takeIf { !sharing && app.connections.forwardAudio.value }
+            ?.let { ConnectionSetupActivity.intent(this, it) } ?: Intent(this, MainActivity::class.java)
+        val open = PendingIntent.getActivity(this, 0, target, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 1, Intent(this, ConnectionService::class.java).setAction("disconnect"), PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, "car_connection").setSmallIcon(R.drawable.ic_veloce_mark)
             .setContentTitle(getString(R.string.app_name)).setContentText(detail).setContentIntent(open)
@@ -101,6 +112,11 @@ class ConnectionService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun requestSetup(id: String, audio: Boolean) {
+        runCatching { startActivity(ConnectionSetupActivity.intent(this, id, audio)) }
+            .onFailure { app.connections.log("Connection setup needs a notification tap: ${it.message}") }
+    }
 
     override fun onDestroy() {
         current?.stop()
@@ -123,17 +139,42 @@ class ConnectionService : Service() {
         private var window: ProjectedWindow? = null
         @Volatile private var renderJob: Job? = null
         private val navigation = CarNavigation()
-        private val buttons = CarButtons({ navigation.mediaKey?.invoke(it) }, {
+        private val buttons = CarButtons({ code -> navigation.mediaKey?.invoke(code) ?: app.media.key(code) }, {
             app.connections.log("Assistant button received (not implemented)")
         })
-        private val id = UUID.randomUUID().toString()
+        val id = UUID.randomUUID().toString()
         private var audioSink: AudioSink? = null
         private var capture: PlaybackCapture? = null
         private var audioGeneration = 0
+        private var locationEnabled = false
+        private val wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Veloce:car-connection")
 
+        fun prepare(intent: Intent? = null) {
+            if (closed.get() || (intent != null && intent.getStringExtra("session") != id) || locationEnabled) return
+            if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
+            try {
+                foreground(app.connections.state.value.detail, location = true)
+                locationEnabled = true
+                app.connections.log("Navigation location capability enabled for this drive")
+            } catch (error: Exception) {
+                app.connections.log("Navigation location could not start; open connection setup or allow background location: ${error.message}")
+            }
+        }
+
+        private fun foreground(detail: String, sharing: Boolean = capture != null, location: Boolean = locationEnabled) {
+            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                (if (sharing) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0) or
+                (if (location) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+            startForeground(1, notification(detail, sharing), types)
+        }
+
+        @SuppressLint("WakelockTimeout")
         suspend fun execute() {
             status(if (usbConnector != null) "Opening USB projection" else "Starting wireless projection")
             try {
+                wakeLock.acquire()
                 val tls = withContext(Dispatchers.IO) { app.connections.identity.tls() }
                 withContext(Dispatchers.IO) {
                     val opened = usbConnector?.open() ?: checkNotNull(wireless).open()
@@ -179,6 +220,7 @@ class ConnectionService : Service() {
             audioSink = sink
             app.connections.audio("Allow audio sharing to send media to the car · ${sink.mode.description}", request = id, capturing = false)
             getSystemService(NotificationManager::class.java).notify(1, notification("Tap to enable car audio"))
+            requestSetup(id, audio = true)
         } }
 
         override fun audioFocus(state: Int) { scope.launch {
@@ -209,8 +251,7 @@ class ConnectionService : Service() {
             val result = intent.getParcelableExtra("consent", Intent::class.java) ?: return
             val generation = ++audioGeneration
             try {
-                startForeground(1, notification("Sharing audio with the car"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                foreground("Sharing audio with the car", sharing = true)
                 val sharing = PlaybackCapture(this@ConnectionService, sink,
                     { detail -> scope.launch { if (!closed.get() && audioGeneration == generation && capture != null) app.connections.audio(detail) } },
                     app.connections::log,
@@ -229,7 +270,7 @@ class ConnectionService : Service() {
             capture?.close()
             capture = null
             if (!closed.get()) {
-                startForeground(1, notification(app.connections.state.value.detail), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                foreground(app.connections.state.value.detail, sharing = false)
                 app.connections.audio("Audio sharing stopped", capturing = false)
             }
         }
@@ -248,7 +289,8 @@ class ConnectionService : Service() {
                     status("Preparing ${mode.width} × ${mode.height} car launcher")
                     val apps = CarApps(this@ConnectionService).discover()
                     withContext(Dispatchers.IO) {
-                        unowned = VideoEncoder(mode, address != null, checkNotNull(session), ::failure)
+                        unowned = VideoEncoder(mode, address != null, checkNotNull(session), ::failure,
+                            { scope.launch { if (!closed.get() && navigation.projected) window?.redraw() } })
                     }
                     if (closed.get()) return@launch
                     val prepared = checkNotNull(unowned)
@@ -286,6 +328,10 @@ class ConnectionService : Service() {
             if (!closed.get()) try { window?.input(report) } catch (error: Exception) { failure(error) }
         } }
 
+        override fun backgroundInput(report: Proto) { scope.launch {
+            if (!closed.get()) try { buttons.backgroundInput(report) } catch (error: Exception) { failure(error) }
+        } }
+
         private fun exit() {
             try { session?.exitToCar() } catch (error: Exception) { failure(error) }
         }
@@ -315,8 +361,9 @@ class ConnectionService : Service() {
             wireless?.close()
             runCatching { window?.close() }
             window = null
-            encoder?.close()
+            runCatching { encoder?.close() }
             encoder = null
+            if (wakeLock.isHeld) wakeLock.release()
         }
     }
 }

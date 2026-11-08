@@ -12,7 +12,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-class VideoEncoder(mode: VideoMode, wireless: Boolean, private val session: CarSession, private val failure: (Exception) -> Unit) : Closeable {
+class VideoEncoder(mode: VideoMode, wireless: Boolean, private val session: CarSession,
+    private val failure: (Exception) -> Unit, private val redraw: () -> Unit = {}) : Closeable {
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
     private var drain: Thread? = null
     @Volatile private var running = true
@@ -49,6 +50,8 @@ class VideoEncoder(mode: VideoMode, wireless: Boolean, private val session: CarS
                 val info = MediaCodec.BufferInfo()
                 var configuration: ByteArray? = null
                 val started = System.nanoTime()
+                var lastFrame = started
+                var lastRedraw = started
                 var receivedFrame = false
                 while (running) {
                     val index = codec.dequeueOutputBuffer(info, 50_000)
@@ -70,9 +73,15 @@ class VideoEncoder(mode: VideoMode, wireless: Boolean, private val session: CarS
                                 if (!bytes.contentEquals(configuration)) { configuration = bytes; session.videoConfig(bytes) }
                             } else {
                                 receivedFrame = true
+                                lastFrame = System.nanoTime()
                                 session.videoFrame(bytes, info.presentationTimeUs, info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0)
                             }
                         }
+                    }
+                    val now = System.nanoTime()
+                    if (now - lastFrame >= TimeUnit.SECONDS.toNanos(1) && now - lastRedraw >= TimeUnit.SECONDS.toNanos(1)) {
+                        lastRedraw = now
+                        redraw()
                     }
                     if (!receivedFrame && System.nanoTime() - started > TimeUnit.SECONDS.toNanos(10)) {
                         throw IOException("The car display encoder produced no video")

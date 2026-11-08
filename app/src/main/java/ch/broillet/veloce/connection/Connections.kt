@@ -14,6 +14,7 @@ import java.util.Locale
 
 data class ConnectionState(
     val active: Boolean = false,
+    val sessionId: String? = null,
     val projecting: Boolean = false,
     val detail: String = "Plug in or go wireless. Your launcher is ready for the road.",
     val identityReady: Boolean = false,
@@ -37,7 +38,13 @@ class Connections(private val context: Context) {
 
     fun update(detail: String, active: Boolean, error: Boolean = false) {
         log(detail)
-        mutable.update { it.copy(detail = detail, active = active, projecting = active && it.projecting, error = error) }
+        mutable.update { it.copy(detail = detail, active = active, sessionId = it.sessionId.takeIf { active },
+            projecting = active && it.projecting, error = error) }
+    }
+
+    fun begin(sessionId: String) {
+        mutable.update { it.copy(active = true, sessionId = sessionId, projecting = false, error = false,
+            audioRequest = null, audioCapturing = false) }
     }
 
     fun projecting() { mutable.update { it.copy(projecting = true) } }

@@ -20,7 +20,10 @@ class CarSessionTest {
 
     @Test(timeout = 30_000) fun `bluetooth mode leaves advertised media audio unopened`() = exercise(forwardAudio = false)
 
-    private fun exercise(plaintextShutdown: Boolean = false, forwardAudio: Boolean = true) {
+    @Test(timeout = 30_000) fun `a silent head unit receives keepalives and a display focus retry without audio`() =
+        exercise(forwardAudio = false, withholdFocus = true)
+
+    private fun exercise(plaintextShutdown: Boolean = false, forwardAudio: Boolean = true, withholdFocus: Boolean = false) {
         val phoneInput = PipedInputStream(256 * 1024)
         val carOutput = PipedOutputStream(phoneInput)
         val carInput = PipedInputStream(256 * 1024)
@@ -33,6 +36,8 @@ class CarSessionTest {
         val video = ArrayBlockingQueue<VideoMode>(1)
         val focusChanges = ArrayBlockingQueue<Boolean>(8)
         val touches = ArrayBlockingQueue<Proto>(1)
+        val backgroundInput = ArrayBlockingQueue<Proto>(2)
+        val phonePings = mutableListOf<Long>()
         val failures = ArrayBlockingQueue<Exception>(2)
         val audioReady = ArrayBlockingQueue<AudioSink>(1)
         val audioErrors = ArrayBlockingQueue<String>(2)
@@ -41,6 +46,7 @@ class CarSessionTest {
             override fun video(mode: VideoMode) { video.add(mode) }
             override fun focus(projected: Boolean, inputEnabled: Boolean) { focusChanges.add(projected) }
             override fun input(report: Proto) { touches.add(report) }
+            override fun backgroundInput(report: Proto) { backgroundInput.add(report) }
             override fun failure(error: Exception) { failures.offer(error) }
             override fun audio(sink: AudioSink) { audioReady.add(sink) }
             override fun audioError(detail: String) { audioErrors.add(detail) }
@@ -74,6 +80,15 @@ class CarSessionTest {
                     ?: continue
                 val id = ((payload[0].toInt() and 255) shl 8) or (payload[1].toInt() and 255)
                 assertEquals(id == 7 || id == 8, flags and 4 != 0)
+                if (channel == 0 && id == 11) {
+                    assertTrue(lastReadEncrypted)
+                    val ping = payload.copyOfRange(2, payload.size)
+                    val timestamp = Proto(ping).number(1)
+                    assertTrue(timestamp > (phonePings.lastOrNull() ?: 0))
+                    phonePings.add(timestamp)
+                    send(0, 12, ping)
+                    continue
+                }
                 return Triple(channel, id, payload.copyOfRange(2, payload.size))
             }
         }
@@ -136,7 +151,16 @@ class CarSessionTest {
             }
             send(11, 0x8003, Proto.build { number(1, 0) })
             send(7, 0x8003, Proto.build { number(1, 2); number(2, 1); bytes(3, byteArrayOf(0, 1)) })
-            assertEquals(0x8007, read().second)
+            val focusRequest = read()
+            assertEquals(0x8007, focusRequest.second)
+            assertEquals(0L, Proto(focusRequest.third).number(3, -1))
+            if (withholdFocus) {
+                val retry = read()
+                assertEquals(0x8007, retry.second)
+                assertEquals(7L, Proto(retry.third).number(1))
+                assertEquals(0L, Proto(retry.third).number(3, -1))
+                assertTrue("No phone-initiated keepalives", phonePings.size >= 2)
+            }
             send(7, 0x8008, Proto.build { number(1, 1) })
             val start = read()
             assertEquals(0x8001, start.second)
@@ -207,8 +231,13 @@ class CarSessionTest {
             assertEquals(123L, Proto(checkNotNull(report).bytes(3)!!).messages(1).single().number(1))
             send(7, 0x8008, Proto.build { number(1, 4) })
             assertEquals(true, focusChanges.poll(2, TimeUnit.SECONDS))
-            send(11, 0x8001, Proto.build { number(1, 11) })
+            send(11, 0x8001, Proto.build {
+                number(1, 11)
+                bytes(4, Proto.build { bytes(1, Proto.build { number(1, 87); number(2, 1) }) })
+            })
             assertNull(touches.poll(50, TimeUnit.MILLISECONDS))
+            val background = checkNotNull(backgroundInput.poll(2, TimeUnit.SECONDS))
+            assertEquals(87L, Proto(checkNotNull(background.bytes(4))).messages(1).single().number(1))
             session.exitToCar()
             val exit = read()
             assertEquals(0x8007, exit.second)

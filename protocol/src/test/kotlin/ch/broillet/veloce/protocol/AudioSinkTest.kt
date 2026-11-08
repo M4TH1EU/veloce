@@ -56,12 +56,10 @@ class AudioSinkTest {
             sink.focus(3)
             assertEquals(4L, Proto(controls.take().bytes).number(1))
             sink.playing(true)
+            assertEquals(1L, Proto(controls.take().bytes).number(1))
             sink.focus(1)
             assertTrue(controls.isEmpty())
-            assertEquals(-1, sink.streamId)
-            sink.playing(false)
-            sink.playing(true)
-            assertEquals(1L, Proto(controls.take().bytes).number(1))
+            assertTrue(sink.streamId >= 0)
             assertNull(error)
         } finally { sink.close(); worker.shutdownNow() }
     }

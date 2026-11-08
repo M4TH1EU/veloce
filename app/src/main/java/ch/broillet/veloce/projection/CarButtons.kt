@@ -1,6 +1,7 @@
 package ch.broillet.veloce.projection
 
 import android.view.KeyEvent
+import ch.broillet.veloce.protocol.Proto
 
 class CarButtons(private val media: (Int) -> Unit, private val assistant: () -> Unit) {
     private val pressed = mutableSetOf<Int>()
@@ -15,6 +16,15 @@ class CarButtons(private val media: (Int) -> Unit, private val assistant: () -> 
     }
 
     fun cancel() = pressed.clear()
+
+    fun backgroundInput(report: Proto) {
+        report.bytes(4)?.let { encoded ->
+            Proto(encoded).messages(1).forEach { event ->
+                val code = event.number(1).toInt()
+                if (code in MEDIA_KEYS) key(code, event.number(2) != 0L)
+            }
+        }
+    }
 
     companion object {
         val MEDIA_KEYS = setOf(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,

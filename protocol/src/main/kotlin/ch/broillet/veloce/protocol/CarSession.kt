@@ -22,6 +22,7 @@ interface CarSessionEvents {
     fun video(mode: VideoMode)
     fun focus(projected: Boolean, inputEnabled: Boolean)
     fun input(report: Proto)
+    fun backgroundInput(report: Proto) {}
     fun failure(error: Exception)
     fun diagnostic(detail: String) {}
     fun audio(sink: AudioSink) {}
@@ -46,7 +47,9 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
     private var audioChannel: Int? = null
     @Volatile private var audio: AudioSink? = null
     private var mode: VideoMode? = null
-    private var videoStarted = false
+    @Volatile private var videoStarted = false
+    @Volatile private var focusRetryAt = 0L
+    private var pingsAnswered = 0
     private var inputEnabled = false
     private val videoLock = Any()
     private var needsKeyFrame = true
@@ -62,6 +65,27 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                     val outgoing = writes.poll() ?: videoWrites.poll() ?: continue
                     write(outgoing)
                     outgoing.sent?.countDown()
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (error: Exception) {
+                if (!stopped.get()) events.failure(error)
+                close()
+            }
+        }
+        val maintenance = thread(name = "veloce-car-keepalive") {
+            try {
+                while (!goodbye.await(1, TimeUnit.SECONDS)) {
+                    if (stage != Stage.CHANNELS) continue
+                    send(0, 11, Proto.build { number(1, System.nanoTime() / 1_000) })
+                    val retryAt = focusRetryAt
+                    if (retryAt != 0L && System.nanoTime() >= retryAt) {
+                        focusRetryAt = 0
+                        if (!videoStarted) {
+                            events.diagnostic("Car withheld display focus; retrying with the display channel")
+                            requestDisplayFocus(withDisplay = true)
+                        }
+                    }
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -102,6 +126,7 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
         } finally {
             close()
             writer.interrupt()
+            maintenance.interrupt()
             try { writer.join(1500) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         }
     }
@@ -166,6 +191,10 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                         ping.bytes(3)?.let { bytes(2, it) }
                     }, encrypted = encrypted)
                 }
+                12 -> {
+                    pingsAnswered++
+                    if (pingsAnswered == 1 || pingsAnswered % 60 == 0) events.diagnostic("Car keepalive replies: $pingsAnswered")
+                }
                 13 -> send(0, 14, Proto.build { number(1, 1) })
                 15 -> {
                     val sent = CountDownLatch(1)
@@ -199,7 +228,8 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                     if (config.number(1) != 2L) throw IOException("Video decoder is not ready")
                     mode = discovery.choose(config.integers(3).ifEmpty { discovery.modes.map { it.index } })
                     window.limit = config.number(2, 1).coerceIn(1, 8).toInt()
-                    send(channel, 0x8007, Proto.build { number(2, 1); number(3, 1) })
+                    requestDisplayFocus()
+                    focusRetryAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
                     events.status("Waiting for display focus")
                 }
                 0x8008 -> {
@@ -237,7 +267,7 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
                         discovery.keys.forEach { number(1, it.toLong()) }
                     })
                 }
-                0x8001 -> if (inputEnabled) events.input(Proto(body))
+                0x8001 -> if (inputEnabled) events.input(Proto(body)) else events.backgroundInput(Proto(body))
                 0x8003 -> requireSuccess(body, "input binding")
             }
         }
@@ -274,6 +304,15 @@ class CarSession(private val link: CarLink, private val tls: TlsEngine, private 
 
     fun exitToCar() {
         offer?.let { send(it.channel, 0x8007, Proto.build { number(2, 2); number(3, 2) }) }
+    }
+
+    private fun requestDisplayFocus(withDisplay: Boolean = false) {
+        val channel = offer?.channel ?: return
+        send(channel, 0x8007, Proto.build {
+            if (withDisplay) number(1, channel.toLong())
+            number(2, 1)
+            number(3, 0)
+        })
     }
 
     fun disconnect() {

@@ -82,6 +82,10 @@ class ProjectedWindow(
         }
     }
 
+    fun redraw() {
+        if (!closed) presentation.window?.decorView?.invalidate()
+    }
+
     fun touchFromPreview(event: MotionEvent, viewWidth: Int, viewHeight: Int) {
         if (viewWidth <= 0 || viewHeight <= 0) return
         val scaled = MotionEvent.obtain(event)

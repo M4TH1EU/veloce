@@ -220,7 +220,8 @@ class CarAppHost(
         val intent = Intent(CarAppService.SERVICE_INTERFACE).setComponent(app.component)
         SessionInfoIntentEncoder.encode(SessionInfo(SessionInfo.DISPLAY_TYPE_MAIN, UUID.randomUUID().toString()), intent)
         try {
-            bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE or
+                Context.BIND_INCLUDE_CAPABILITIES or Context.BIND_ALLOW_ACTIVITY_STARTS or Context.BIND_IMPORTANT)
             check(bound) { "Could not bind to ${app.label}" }
             scope.launch { delay(10_000); if (remote == null) fail(IllegalStateException("Timed out binding to ${app.label}")) }
         } catch (failure: Exception) { fail(failure) }
