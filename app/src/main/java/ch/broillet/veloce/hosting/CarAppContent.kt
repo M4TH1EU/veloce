@@ -156,11 +156,11 @@ internal fun TemplateContent(template: Template, host: CarAppHost, modifier: Mod
         is TabTemplate -> Column(modifier) {
             if (showHeader) Actions(listOfNotNull(template.headerAction), host)
             Loading(template.isLoading)
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 template.tabs.forEach { tab ->
                     GlassSurface(onClick = { host.event { template.tabCallbackDelegate.sendTabSelected(tab.contentId, it) } },
                         selected = tab.contentId == template.activeTabContentId) {
-                        Row(Modifier.heightIn(min = 64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+                        Row(Modifier.heightIn(min = 68.dp).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             CarImage(tab.icon, host)
                             Text(tab.title.text(), style = MaterialTheme.typography.titleMedium)
@@ -193,7 +193,8 @@ internal fun Template?.hasMapSurface(): Boolean = when (this) {
 
 @Composable
 @androidx.annotation.OptIn(androidx.car.app.annotations.ExperimentalCarApi::class)
-private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: Modifier, insets: PaddingValues, bottomOverlay: Dp, mapScene: MapScene?) {
+private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: Modifier, insets: PaddingValues,
+    bottomOverlay: Dp, mapScene: MapScene?) {
     val navigation = template as? NavigationTemplate
     val controller = when (template) {
         is MapWithContentTemplate -> template.mapController
@@ -245,7 +246,7 @@ private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: M
         mapScene?.panStart = {}
         mapScene?.panEnd = {}
     } }
-    val noticeSpace = if (host.notice != null) 76.dp else 0.dp
+    val noticeSpace = if (host.notice != null) 80.dp else 0.dp
     val topHeight = noticeSpace + if (primary.isNotEmpty()) 64.dp else 0.dp
     var infoWidth by remember { mutableStateOf(0.dp) }
     var travelWidth by remember { mutableStateOf(0.dp) }
@@ -253,22 +254,22 @@ private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: M
         val start = insets.calculateStartPadding(direction)
         val end = insets.calculateEndPadding(direction)
         val availableWidth = (maxWidth - start - end).coerceAtLeast(0.dp)
-        val navigationWidth = minOf(360.dp, availableWidth * .56f)
-        val actionWidth = if (navigation != null) minOf(320.dp, (availableWidth - navigationWidth - 12.dp).coerceAtLeast(64.dp))
-            else minOf(maxWidth * .5f, 320.dp)
-        val panelWidth = if (navigation == null) minOf(availableWidth * .42f, 340.dp) else 0.dp
+        val navigationWidth = minOf(320.dp, availableWidth * .5f)
+        val panelWidth = if (navigation == null) minOf(availableWidth * .56f, 440.dp) else 0.dp
+        val actionWidth = minOf(320.dp, (availableWidth - maxOf(navigationWidth.takeIf { navigation != null } ?: 0.dp, panelWidth) - 12.dp).coerceAtLeast(64.dp))
+        val actionSize = minOf(64.dp, ((actionWidth - 8.dp * (primary.size - 1).coerceAtLeast(0)) / primary.size.coerceAtLeast(1)).coerceAtLeast(56.dp))
         val panelStart = start + if (panelWidth > 0.dp) panelWidth + 12.dp else 0.dp
         val sideWidth = if (navigation != null) maxOf(infoWidth, if (travel != null) travelWidth else 0.dp) else 0.dp
         val visibleInsets = PaddingValues(
             start = panelStart + if (sideWidth > 0.dp) sideWidth + 12.dp else 0.dp,
             top = insets.calculateTopPadding() + topHeight,
-            end = end + if (mapButtons.isNotEmpty()) 80.dp else 0.dp,
+            end = end + if (mapButtons.isNotEmpty()) 76.dp else 0.dp,
             bottom = insets.calculateBottomPadding() + bottomOverlay,
         )
         val stableStart = if (navigation != null) maxOf(visibleInsets.calculateStartPadding(direction), start + navigationWidth + 12.dp)
             else visibleInsets.calculateStartPadding(direction)
         val stableInsets = PaddingValues(start = stableStart, top = insets.calculateTopPadding() + maxOf(topHeight, 64.dp),
-            end = end + 80.dp, bottom = insets.calculateBottomPadding() + bottomOverlay)
+            end = end + 76.dp, bottom = insets.calculateBottomPadding() + bottomOverlay)
         val startPan = { touching = true; if (hasPan && panToggle?.isEnabled != false) setPanning(true) }
         val endPan = { touching = false }
         if (mapScene == null) MapSurface(host, Modifier.fillMaxSize(), visibleInsets, stableInsets, startPan, endPan)
@@ -293,18 +294,18 @@ private fun MapTemplateContent(template: Template, host: CarAppHost, modifier: M
                             if (navigation != null) NavigationInfo(navigation, host)
                         }
                     }
-                    Box(Modifier.widthIn(max = actionWidth).height(topHeight)) {
+                    Box(Modifier.width(actionWidth).height(topHeight)) {
                         host.notice?.let { message ->
                             HostNotice(message, host::dismissNotice, Modifier.fillMaxWidth().carEntrance(message))
                         }
-                        Row(Modifier.align(Alignment.TopEnd).padding(top = noticeSpace)
-                            .horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            primary.forEach { ActionButton(it, host, compact = true) }
+                        Row(Modifier.align(Alignment.TopEnd).fillMaxWidth().padding(top = noticeSpace)
+                            .horizontalScroll(rememberScrollState()).widthIn(min = actionWidth), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                            primary.forEach { ActionButton(it, host, compact = true, size = actionSize) }
                         }
                     }
                 }
                 Column(Modifier.align(Alignment.BottomEnd).padding(top = topHeight + 12.dp)
-                    .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     mapButtons.forEach { ActionButton(it, host, compact = true) }
                 }
                 if (travel != null) Box(Modifier.align(Alignment.BottomStart).padding(bottom = bottomOverlay).widthIn(max = 340.dp)
@@ -352,11 +353,11 @@ private fun NavigationInfo(template: NavigationTemplate, host: CarAppHost) {
                 is RoutingInfo -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Loading(info.isLoading)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        CarImage(info.currentStep?.maneuver?.icon, host, Modifier.size(52.dp))
+                        CarImage(info.currentStep?.maneuver?.icon, host, Modifier.size(48.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             if (info.currentDistance != null) Text(info.currentDistance.distance(), style = MaterialTheme.typography.headlineSmall,
                                 color = MaterialTheme.colorScheme.primary)
-                            Text(info.currentStep?.cue.text(), fontSize = 21.sp, lineHeight = 27.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text(info.currentStep?.cue.text(), fontSize = 20.sp, lineHeight = 26.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     info.currentStep?.lanesImage?.let { CarImage(it, host, Modifier.fillMaxWidth().height(48.dp)) }
@@ -422,11 +423,12 @@ private fun ListItemContent(item: Item, list: ItemList?, index: Int, host: CarAp
     if (item !is Row) { Text("Unsupported item: ${item.javaClass.simpleName}"); return }
     val selection = list?.onSelectedDelegate
     val clickable = selection != null || item.onClickDelegate != null
-    GlassSurface(onClick = {
+    GlassSurface(onClick = if (clickable) ({
         if (selection != null) host.event { selection.sendSelected(index, it) } else host.click(item.onClickDelegate)
-    }, enabled = item.isEnabled && clickable, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).heightIn(min = 80.dp),
+    }) else null, enabled = item.isEnabled, selected = selection != null && list.selectedIndex == index,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).heightIn(min = 80.dp),
         shape = RoundedCornerShape(20.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (selection != null) RadioButton(selected = list.selectedIndex == index, onClick = null)
             CarImage(item.image, host, Modifier.size(40.dp))
             Column(Modifier.weight(1f)) {
@@ -482,18 +484,19 @@ private fun Actions(actions: List<Action>, host: CarAppHost) {
 }
 
 @Composable
-internal fun ActionButton(action: Action, host: CarAppHost, compact: Boolean = false, onClick: (() -> Unit)? = null) {
+internal fun ActionButton(action: Action, host: CarAppHost, compact: Boolean = false,
+    size: Dp = if (compact) 64.dp else 68.dp, onClick: (() -> Unit)? = null) {
     val click = onClick ?: { host.click(action) }
-    val opacity = if (compact) .78f else LocalGlassOpacity.current
+    val opacity = if (compact) .96f else LocalGlassOpacity.current
     if (action.type == Action.TYPE_BACK) {
-        GlassIconButton(CarSymbol.Back, "Back", click, enabled = action.isEnabled, opacity = opacity)
+        GlassIconButton(CarSymbol.Back, "Back", click, enabled = action.isEnabled, opacity = opacity, size = size)
         return
     }
-    val title = action.title.text()
+    val title = action.title.text().trim()
     GlassSurface(onClick = click, enabled = action.isEnabled, opacity = opacity,
-        modifier = Modifier.heightIn(min = 64.dp).widthIn(min = 64.dp).semantics {
+        modifier = Modifier.heightIn(min = size).widthIn(min = size, max = if (compact) 200.dp else Dp.Infinity).semantics {
             if (title.isNotBlank()) contentDescription = title
-        }, shape = RoundedCornerShape(if (compact) 22.dp else 24.dp)) {
+        }, shape = RoundedCornerShape(40.dp)) {
         Row(Modifier.align(Alignment.Center).padding(horizontal = if (compact && title.isEmpty()) 12.dp else 16.dp,
             vertical = if (compact && title.isNotEmpty()) 16.dp else 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) { ActionLabel(action, host) }
@@ -501,17 +504,23 @@ internal fun ActionButton(action: Action, host: CarAppHost, compact: Boolean = f
 }
 
 @Composable
-private fun ActionLabel(action: Action, host: CarAppHost) {
-    CarImage(action.icon, host, Modifier.size(36.dp))
-    val title = action.title.text().ifEmpty {
+private fun RowScope.ActionLabel(action: Action, host: CarAppHost) {
+    val title = action.title.text().trim().ifEmpty {
         when (action.type) { Action.TYPE_BACK -> "Back"; Action.TYPE_APP_ICON -> "Home"; Action.TYPE_PAN -> "Pan"; else -> "" }
     }
-    if (title.isNotEmpty()) Text(title, maxLines = 1, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    CarImage(action.icon, host, Modifier.size(32.dp), defaultTint = MaterialTheme.colorScheme.onSurface,
+        fallback = CarSymbol.Info.takeIf { title.isEmpty() })
+    if (title.isNotEmpty()) Text(title, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 }
 
 @Composable
-internal fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modifier) {
-    if (icon == null) return
+internal fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Modifier,
+    defaultTint: Color? = null, fallback: CarSymbol? = null) {
+    if (icon == null) {
+        fallback?.let { CarGlyph(it, modifier.size(32.dp), defaultTint ?: MaterialTheme.colorScheme.onSurface) }
+        return
+    }
     val context = LocalContext.current
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, icon) {
         value = withContext(Dispatchers.IO) {
@@ -533,14 +542,13 @@ internal fun CarImage(icon: CarIcon?, host: CarAppHost, modifier: Modifier = Mod
             CarColor.TYPE_YELLOW -> Color(0xFFE9A240)
             else -> MaterialTheme.colorScheme.onSurface
         }
-    }
+    } ?: defaultTint.takeUnless { icon.type == CarIcon.TYPE_APP_ICON }
     bitmap?.let { Image(it, contentDescription = null, modifier = modifier.size(32.dp), colorFilter = tint?.let(ColorFilter::tint)) }
         ?: when (icon.type) {
-            CarIcon.TYPE_BACK -> Text("←")
-            CarIcon.TYPE_ALERT -> Text("!")
-            CarIcon.TYPE_ERROR -> Text("!")
-            CarIcon.TYPE_PAN -> Text("↔")
-            else -> Unit
+            CarIcon.TYPE_BACK -> CarGlyph(CarSymbol.Back, modifier.size(32.dp), MaterialTheme.colorScheme.onSurface)
+            CarIcon.TYPE_ALERT, CarIcon.TYPE_ERROR -> CarGlyph(CarSymbol.Warning, modifier.size(32.dp), MaterialTheme.colorScheme.error)
+            CarIcon.TYPE_PAN -> CarGlyph(CarSymbol.Pan, modifier.size(32.dp), MaterialTheme.colorScheme.onSurface)
+            else -> fallback?.let { CarGlyph(it, modifier.size(32.dp), tint ?: MaterialTheme.colorScheme.onSurface) }
         }
 }
 

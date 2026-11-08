@@ -1,6 +1,5 @@
 package ch.broillet.veloce.ui
 
-import android.graphics.Bitmap
 import android.media.session.PlaybackState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -8,12 +7,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -27,8 +25,8 @@ import ch.broillet.veloce.lyrics.*
 import ch.broillet.veloce.media.NowPlaying
 
 @Composable
-internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: LyricsRepository, control: (Long) -> Boolean,
-    seek: (Long) -> Boolean, close: () -> Unit, modifier: Modifier = Modifier, split: (() -> Unit)? = null) {
+internal fun LyricsContent(track: NowPlaying?, repository: LyricsRepository, control: (Long) -> Boolean,
+    seek: (Long) -> Boolean, modifier: Modifier = Modifier) {
     val query = remember(track?.title, track?.artist, track?.album, track?.durationMs) {
         LyricsTrack(track?.title.orEmpty(), track?.artist.orEmpty(), track?.album.orEmpty(), track?.durationMs ?: 0)
     }
@@ -37,18 +35,7 @@ internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: Lyr
         val state by produceState(LyricsState(), repository, query, revision) {
             repository.lyrics(query, refresh = revision > 0).collect { value = it }
         }
-        Column(modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ArtworkImage(artwork, Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)))
-                Column(Modifier.weight(1f)) {
-                    Text(track?.title ?: stringResource(R.string.now_playing), style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    track?.artist?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                }
-                split?.let { GlassIconButton(CarSymbol.SplitScreen, stringResource(R.string.split_screen), it, size = 60.dp) }
-                GlassIconButton(CarSymbol.Close, stringResource(R.string.close_lyrics), close, size = 60.dp, iconSize = 30.dp)
-            }
+        Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val document = state.document
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 when {
@@ -61,7 +48,7 @@ internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: Lyr
                     else -> LyricsLines(document, track, seek)
                 }
             }
-            Row(Modifier.fillMaxWidth().height(68.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val kind = when (document?.quality) { 3 -> R.string.word_synced; 2 -> R.string.line_synced; else -> R.string.plain_lyrics }
                 Box(Modifier.weight(1f)) {
                     Text(document?.let { if (it.instrumental) it.source else "${it.source} · ${stringResource(kind)}" }.orEmpty(),
@@ -69,7 +56,7 @@ internal fun LyricsContent(track: NowPlaying?, artwork: Bitmap?, repository: Lyr
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlaybackControls(track, { control(it) }, size = 64.dp, playSize = 68.dp)
+                    PlaybackControls(track, { control(it) }, size = 68.dp, playSize = 72.dp)
                 }
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
                     if (state.loading && document != null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -107,21 +94,17 @@ private fun LyricsLines(document: LyricsDocument, track: NowPlaying?, seek: (Lon
                 bottom = if (document.synced) maxHeight - anchor else 12.dp)) {
             itemsIndexed(document.lines) { index, line ->
                 val active = index == current
-                val color = MaterialTheme.colorScheme.onSurface
                 val text = buildAnnotatedString {
                     append(line.text.ifBlank { "•••" })
-                    if (active && line.words.isNotEmpty()) {
-                        val now = position.value
-                        line.words.forEach { word ->
-                            val from = word.from.coerceIn(0, line.text.length)
-                            val until = word.until.coerceIn(from, line.text.length)
-                            addStyle(SpanStyle(color = color.copy(alpha = if (now >= word.startMs) 1f else .3f)), from, until)
-                        }
+                    if (active) line.words.forEach { word ->
+                        val from = word.from.coerceIn(0, line.text.length)
+                        val until = word.until.coerceIn(from, line.text.length)
+                        addStyle(SpanStyle(color = Color.White.copy(alpha = if (position.value >= word.startMs) 1f else .5f)), from, until)
                     }
                 }
                 Text(text, Modifier.fillMaxWidth().clickable(enabled = document.synced && line.startMs != null &&
                     track?.supports(PlaybackState.ACTION_SEEK_TO) == true) { if (seek(checkNotNull(line.startMs))) follow = true },
-                    color = color.copy(alpha = if (!document.synced || active) 1f else .28f),
+                    color = Color.White.copy(alpha = if (!document.synced || active) 1f else .36f),
                     fontSize = font, lineHeight = (font.value * 1.2f).sp, fontWeight = FontWeight.SemiBold)
             }
         }

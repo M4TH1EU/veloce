@@ -10,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -59,12 +58,15 @@ internal fun PlaybackTimeline(track: NowPlaying, seekTo: (Long) -> Boolean, comp
     val progress = displayed.toFloat() / track.durationMs
     val canSeek = track.supports(PlaybackState.ACTION_SEEK_TO)
     val interactions = remember { MutableInteractionSource() }
+    val sliderState = rememberSliderState()
+    SideEffect { sliderState.value = progress }
     val accent = MaterialTheme.colorScheme.primary
-    val colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = .2f))
+    val colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent,
+        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .2f))
     val label = stringResource(R.string.playback_position)
     val timeStyle = MaterialTheme.typography.bodySmall.let { if (compact) it.copy(fontSize = 12.sp, lineHeight = 16.sp) else it }
     Column {
-        Slider(value = progress, onValueChange = { dragged = it }, enabled = canSeek,
+        Slider(state = sliderState, onValueChange = { sliderState.value = it; dragged = it }, enabled = canSeek,
             onValueChangeFinished = {
                 dragged?.let { fraction ->
                     val request = PendingSeek((fraction.toDouble() * track.durationMs).toLong().coerceIn(0, track.durationMs), SystemClock.elapsedRealtime())
@@ -73,7 +75,7 @@ internal fun PlaybackTimeline(track: NowPlaying, seekTo: (Long) -> Boolean, comp
                 dragged = null
             }, modifier = Modifier.fillMaxWidth().height(48.dp).semantics { contentDescription = label },
             colors = colors, interactionSource = interactions,
-            thumb = { SliderDefaults.Thumb(interactions, colors = colors, enabled = canSeek, thumbSize = DpSize(8.dp, 32.dp)) },
+            thumb = { SliderDefaults.Thumb(interactions, colors = colors, enabled = canSeek, thumbSize = DpSize(10.dp, 36.dp)) },
             track = { state -> WavySeekTrack({ state.value }, track.advancing && dragged == null) })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(playbackTime(displayed), style = timeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -94,15 +96,17 @@ private fun WavySeekTrack(progress: () -> Float, playing: Boolean) {
     }
     val path = remember { Path() }
     val accent = MaterialTheme.colorScheme.primary
+    val inactive = MaterialTheme.colorScheme.onSurface.copy(alpha = .2f)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Canvas(Modifier.fillMaxWidth().height(20.dp)) {
         scale(if (rtl) -1f else 1f, 1f) {
             val end = size.width * progress().coerceIn(0f, 1f)
             val center = size.height / 2f
             val gap = 8.dp.toPx()
-            val width = 4.dp.toPx()
-            if (end + gap < size.width) drawLine(Color.White.copy(alpha = .2f), Offset(end + gap, center),
+            val width = 6.dp.toPx()
+            if (end + gap < size.width) drawLine(inactive, Offset(end + gap, center),
                 Offset(size.width, center), width, cap = StrokeCap.Round)
+            if (end < size.width - gap) drawCircle(accent, 2.dp.toPx(), Offset(size.width, center))
             if (end > gap) clipRect(right = end - gap) {
                 val wavelength = 28.dp.toPx()
                 val height = 4.dp.toPx() * amplitude * 4f / 3f

@@ -39,7 +39,7 @@ internal fun MapOverviewContent(template: NavigationTemplate?, host: CarAppHost,
     val showFooter = travel != null || host.navigating
     val showHeader = host.notice != null || template?.navigationInfo != null
     var headerHeight by remember { mutableStateOf(0.dp) }
-    var footerHeight by remember { mutableStateOf(56.dp) }
+    var footerHeight by remember { mutableStateOf(68.dp) }
     val area = PaddingValues(
         start = insets.calculateStartPadding(direction),
         top = insets.calculateTopPadding() + if (showHeader) headerHeight + 12.dp else 0.dp,
@@ -106,12 +106,12 @@ private fun MapTripSummary(estimate: TravelEstimate?, navigating: Boolean, stop:
     val remaining = estimate?.remainingTimeSeconds?.takeIf { it >= 0 }?.let { stringResource(R.string.remaining_minutes, (it + 59) / 60) }
     val summary = listOfNotNull(remaining, estimate?.remainingDistance.distance().takeIf { it.isNotBlank() }, arrival).joinToString(" · ")
     GlassSurface(modifier, RoundedCornerShape(20.dp), opacity = .96f) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(summary.ifBlank { stringResource(R.string.navigation) }, Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (navigating) GlassIconButton(CarSymbol.Close, stringResource(R.string.stop_navigation), stop, size = 48.dp, iconSize = 26.dp, opacity = .12f)
+            if (navigating) GlassIconButton(CarSymbol.Close, stringResource(R.string.stop_navigation), stop, size = 60.dp, iconSize = 28.dp, opacity = 0f)
         }
     }
 }

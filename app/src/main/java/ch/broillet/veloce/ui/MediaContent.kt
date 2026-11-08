@@ -2,8 +2,8 @@ package ch.broillet.veloce.ui
 
 import android.media.session.PlaybackState
 import android.graphics.Bitmap
-import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -43,35 +42,35 @@ fun MediaPlayer(track: NowPlaying?, control: (Long) -> Boolean, modifier: Modifi
         val coverSize = if (wide) minOf(maxHeight - 28.dp, maxWidth * .36f, 360.dp).coerceAtLeast(96.dp)
             else minOf(maxWidth * .48f, 180.dp)
         val cover: @Composable () -> Unit = {
-            ArtworkTransition(bitmap, Modifier.size(coverSize).clip(RoundedCornerShape(28.dp))
-                .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(28.dp))) { art, layer ->
+            ArtworkTransition(bitmap, Modifier.size(coverSize).clip(RoundedCornerShape(24.dp))) { art, layer ->
                 ArtworkImage(art, layer)
             }
         }
         val details: @Composable (Modifier) -> Unit = { area ->
-            Column(area, verticalArrangement = if (wide) Arrangement.SpaceBetween else Arrangement.spacedBy(16.dp)) {
+            Column(area.then(if (wide && compact) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+                verticalArrangement = if (wide) Arrangement.SpaceBetween else Arrangement.spacedBy(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
                     Text(track?.title ?: stringResource(R.string.start_playback), Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                         style = MaterialTheme.typography.headlineLarge, fontSize = titleSize, lineHeight = (titleSize.value + 6).sp,
                         maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
                     track?.artist?.takeIf { it.isNotBlank() }?.let {
                         Text(it, style = MaterialTheme.typography.titleLarge, fontSize = if (compact) 16.sp else 22.sp,
-                            lineHeight = if (compact) 20.sp else 28.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f),
+                            lineHeight = if (compact) 20.sp else 28.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (failed) Text(stringResource(R.string.media_unavailable), color = MaterialTheme.colorScheme.error, maxLines = 1)
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 track?.let {
-                    Box(Modifier.fillMaxWidth().height(if (compact) 64.dp else 68.dp)) {
+                    Box(Modifier.fillMaxWidth().height(if (compact) 60.dp else 64.dp)) {
                         PlaybackTimeline(it, { position -> seekTo(position).also { success -> failed = !success } }, compact)
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally)) {
                         PlaybackControls(it, { failed = !control(it) }, playSize = if (compact) 76.dp else 88.dp)
                     }
-                    Box(Modifier.fillMaxWidth().height(if (compact) 56.dp else 64.dp)) {
+                    if (it.hasSecondaryControls()) Box(Modifier.fillMaxWidth().height(if (compact) 60.dp else 68.dp)) {
                         PlayerSecondaryControls(it, { failed = !control(it) }, { failed = !customAction(it) }, { failed = !setSpeed(it) },
-                            if (compact) 56.dp else 64.dp)
+                            if (compact) 60.dp else 68.dp)
                     }
                 }
             }
@@ -88,17 +87,16 @@ fun MediaPlayer(track: NowPlaying?, control: (Long) -> Boolean, modifier: Modifi
 }
 
 @Composable
-internal fun PlaybackControls(track: NowPlaying?, control: (Long) -> Unit, size: Dp = 64.dp, playSize: Dp = size,
+internal fun PlaybackControls(track: NowPlaying?, control: (Long) -> Unit, size: Dp = 68.dp, playSize: Dp = size,
     plain: Boolean = false) {
     @Composable fun Button(symbol: CarSymbol, label: Int, action: Long, primary: Boolean = false) {
         val enabled = track?.supports(action) == true
         val description = stringResource(label)
         val iconSize = if (primary && playSize > size) 38.dp else if (size < 64.dp) 24.dp else 30.dp
-        if (plain) IconButton({ control(action) }, Modifier.size(size), enabled = enabled) {
-            CarGlyph(symbol, Modifier.size(iconSize).semantics { contentDescription = description },
-                MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .3f))
+        if (plain && !primary) IconButton({ control(action) }, Modifier.size(size), enabled = enabled) {
+            CarGlyph(symbol, Modifier.size(iconSize).semantics { contentDescription = description }, LocalContentColor.current)
         } else GlassIconButton(symbol, description, { control(action) }, enabled = enabled,
-            selected = primary && playSize > size, size = if (primary) playSize else size, iconSize = iconSize)
+            size = if (primary) playSize else size, iconSize = iconSize, prominent = primary)
     }
     Button(CarSymbol.Previous, R.string.previous_track, PlaybackState.ACTION_SKIP_TO_PREVIOUS)
     Button(if (track?.playing == true) CarSymbol.Pause else CarSymbol.Play,
@@ -113,15 +111,17 @@ internal fun CompactMediaPlayer(track: NowPlaying?, open: () -> Unit, browse: ()
     AlbumSceneTheme(artwork, dense = false) {
         BoxWithConstraints(modifier) {
             val compact = maxHeight < 400.dp
-            GlassSurface(Modifier.fillMaxSize(), opacity = .94f) {
+            GlassSurface(Modifier.fillMaxSize().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .22f), RoundedCornerShape(28.dp)),
+                opacity = 1f, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                if (LocalAppSettings.current.artworkBackground && artwork != null) AlbumBackdrop(artwork, Modifier.matchParentSize(), radius = 32.dp)
                 Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.now_playing), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        GlassIconButton(CarSymbol.Library, stringResource(R.string.media_library), browse, size = 48.dp, iconSize = 24.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        GlassIconButton(CarSymbol.Library, stringResource(R.string.media_library), browse, size = 56.dp, iconSize = 28.dp, opacity = 0f)
                     }
-                    Column(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp))
+                    Column(Modifier.fillMaxWidth().weight(1f)
                         .clickable(role = Role.Button, onClickLabel = stringResource(if (track == null) R.string.choose_audio_app else R.string.open_player), onClick = open),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -143,13 +143,16 @@ internal fun CompactMediaPlayer(track: NowPlaying?, open: () -> Unit, browse: ()
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PlaybackControls(track, { failed = !control(it) }, size = 56.dp, playSize = 64.dp)
+                        PlaybackControls(track, { failed = !control(it) }, size = 68.dp, playSize = 76.dp)
                     }
                 }
             }
         }
     }
 }
+
+private fun NowPlaying.hasSecondaryControls(): Boolean = supports(PlaybackState.ACTION_REWIND) ||
+    supports(PlaybackState.ACTION_FAST_FORWARD) || supports(PlaybackState.ACTION_SET_PLAYBACK_SPEED) || customActions.isNotEmpty()
 
 @Composable
 private fun PlayerSecondaryControls(track: NowPlaying, control: (Long) -> Unit, customAction: (String) -> Unit, setSpeed: (Float) -> Unit, size: Dp) {
@@ -179,7 +182,7 @@ private fun PlayerSecondaryControls(track: NowPlaying, control: (Long) -> Unit, 
                     Text(stringResource(R.string.playback_speed_title), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                     GlassIconButton(CarSymbol.Close, stringResource(R.string.cancel), { speedPicker = false })
                 }
-                LazyVerticalGrid(GridCells.Fixed(3), Modifier.height(152.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyVerticalGrid(GridCells.Fixed(3), Modifier.height(164.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(listOf(.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)) { value ->
                         CarTextButton("$value×", { speedPicker = false; setSpeed(value) }, selected = value == track.speed)
                     }

@@ -199,4 +199,8 @@
     <string name="advanced_audio_detail">Advanced, optional commands for audio sharing.</string>
     <string name="app_version">Veloce · %1$s</string>
     <string name="about_veloce">Independent. Open by design.\nMade for a more personal drive.</string>
+    <string name="launcher_page">Page %1$d of %2$d</string>
+    <string name="scroll_up">Scroll up</string>
+    <string name="scroll_down">Scroll down</string>
+    <string name="media_apps">Media apps</string>
 </resources>

@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,7 +42,9 @@ internal fun PhoneHome(model: HomeModel, mediaAccess: Boolean, connectUsb: () ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CarGlyph(CarSymbol.Veloce, Modifier.size(24.dp), MaterialTheme.colorScheme.primary)
                 Text(stringResource(R.string.app_name), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = settings) { Icon(painterResource(R.drawable.ic_rounded_tune), stringResource(R.string.settings)) }
+                FilledTonalIconButton(onClick = settings) {
+                    Icon(painterResource(R.drawable.ic_rounded_settings), stringResource(R.string.settings))
+                }
             }
             PhoneHeader(stringResource(if (connection.projecting) R.string.home_connected_title else R.string.home_title),
                 stringResource(if (connection.projecting) R.string.home_connected_detail else R.string.home_description))
@@ -70,7 +74,9 @@ internal fun PhoneHome(model: HomeModel, mediaAccess: Boolean, connectUsb: () ->
                             Text(stringResource(R.string.preview_home_detail), style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        CarGlyph(CarSymbol.ChevronRight, Modifier.size(24.dp), MaterialTheme.colorScheme.primary)
+                        Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                            CarGlyph(CarSymbol.ChevronRight, Modifier.size(28.dp), MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
                     }
                 }
             }
@@ -98,8 +104,7 @@ internal fun PhoneHome(model: HomeModel, mediaAccess: Boolean, connectUsb: () ->
 @Composable
 private fun ConnectionCard(connection: ConnectionState, connect: () -> Unit, disconnect: () -> Unit, prepare: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    OutlinedCard(shape = RoundedCornerShape(32.dp), colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceContainer),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.outlineVariant.copy(alpha = .6f))) {
+    Card(shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().animateContentSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SymbolTile(CarSymbol.Car, prominent = true)
@@ -132,6 +137,9 @@ private fun ConnectionCard(connection: ConnectionState, connect: () -> Unit, dis
             }, enabled = !connection.preparing) {
                 if (connection.preparing) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = colors.onPrimary, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                } else {
+                    CarGlyph(if (connection.active) CarSymbol.Close else CarSymbol.Car, Modifier.size(24.dp), colors.onPrimary)
                     Spacer(Modifier.width(10.dp))
                 }
                 Text(stringResource(when {
@@ -214,7 +222,7 @@ internal fun CarAppsSheet(model: HomeModel, dismiss: () -> Unit) {
                 Text(stringResource(R.string.car_apps_description), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (installed.isNotEmpty()) item {
-                OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = CircleShape,
                     label = { Text(stringResource(R.string.search_car_apps)) },
                     leadingIcon = { CarGlyph(CarSymbol.Search, Modifier.size(22.dp), MaterialTheme.colorScheme.onSurfaceVariant) })
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {

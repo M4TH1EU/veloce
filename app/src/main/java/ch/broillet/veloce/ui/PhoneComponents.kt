@@ -20,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -37,8 +36,8 @@ import java.util.Date
 
 @Composable
 internal fun PhoneHeader(title: String, description: String) {
-    Column(Modifier.padding(top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineLarge)
+    Column(Modifier.padding(top = 24.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(title, style = MaterialTheme.typography.displaySmall)
         Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -48,31 +47,32 @@ internal fun PhonePrimaryButton(onClick: () -> Unit, enabled: Boolean = true, co
     val interactions = remember { MutableInteractionSource() }
     val pressed by interactions.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) .975f else 1f, spring(.8f, 500f), label = "Action press")
-    val corner by animateDpAsState(if (pressed) 20.dp else 30.dp, spring(.8f, 500f), label = "Action shape")
+    val corner by animateDpAsState(if (pressed) 16.dp else 32.dp, spring(.8f, 500f), label = "Action shape")
     Button(onClick, enabled = enabled, interactionSource = interactions, shape = RoundedCornerShape(corner),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp).graphicsLayer { scaleX = scale; scaleY = scale }, content = content)
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).graphicsLayer { scaleX = scale; scaleY = scale }, content = content)
 }
 
 @Composable
 internal fun SectionLabel(label: String, modifier: Modifier = Modifier) {
-    Text(label, modifier.padding(start = 8.dp, top = 12.dp, bottom = 2.dp),
+    Text(label, modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
 }
 
 @Composable
 internal fun PhonePanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(content = content)
     }
 }
 
 @Composable
 internal fun SymbolTile(symbol: CarSymbol, modifier: Modifier = Modifier, prominent: Boolean = false) {
-    Box(modifier.size(if (prominent) 64.dp else 44.dp)
-        .background(if (prominent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            RoundedCornerShape(if (prominent) 24.dp else 16.dp)), contentAlignment = Alignment.Center) {
-        CarGlyph(symbol, Modifier.size(if (prominent) 30.dp else 22.dp),
-            if (prominent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+    Box(modifier.size(if (prominent) 72.dp else 48.dp)
+        .background(if (prominent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+            RoundedCornerShape(if (prominent) 24.dp else 18.dp)), contentAlignment = Alignment.Center) {
+        CarGlyph(symbol, Modifier.size(if (prominent) 36.dp else 24.dp),
+            if (prominent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
     }
 }
 
@@ -80,7 +80,7 @@ internal fun SymbolTile(symbol: CarSymbol, modifier: Modifier = Modifier, promin
 internal fun SettingsRow(title: String, description: String? = null, symbol: CarSymbol? = null,
     onClick: (() -> Unit)? = null, enabled: Boolean = true, trailing: (@Composable () -> Unit)? = null) {
     val content: @Composable () -> Unit = {
-        Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 20.dp, vertical = 16.dp),
+        Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 20.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             if (symbol != null) SymbolTile(symbol)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -93,13 +93,14 @@ internal fun SettingsRow(title: String, description: String? = null, symbol: Car
             else if (onClick != null) CarGlyph(CarSymbol.ChevronRight, Modifier.size(20.dp), MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (onClick != null) Surface(onClick, enabled = enabled, color = Color.Transparent, content = content)
-    else content()
+    if (onClick != null) Surface(onClick, enabled = enabled, shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow, content = content)
+    else Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, content = content)
 }
 
 @Composable
 internal fun PanelDivider() {
-    HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f))
+    HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.background)
 }
 
 @Composable
@@ -109,7 +110,7 @@ internal fun StatusLabel(label: String, active: Boolean = false, error: Boolean 
         active -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }, label = "Connection status")
-    Row(Modifier.clip(CircleShape).background(color.copy(alpha = .10f)).padding(horizontal = 12.dp, vertical = 7.dp),
+    Row(Modifier.clip(CircleShape).background(color.copy(alpha = .12f)).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(6.dp).background(color, CircleShape))
         Text(label, style = MaterialTheme.typography.labelMedium, color = color)
@@ -133,14 +134,15 @@ internal fun CabinIllustration(modifier: Modifier = Modifier) {
     CarTheme(settings) {
         val colors = MaterialTheme.colorScheme
         Surface(modifier.fillMaxWidth().aspectRatio(1.9f).clearAndSetSemantics { contentDescription = label },
-            shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerLowest,
-            border = androidx.compose.foundation.BorderStroke(1.dp, colors.outlineVariant.copy(alpha = .55f))) {
+            shape = RoundedCornerShape(24.dp), color = colors.surfaceContainerLowest) {
             Row(Modifier.cabinBackground().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassSurface(Modifier.width(44.dp).fillMaxHeight(), RoundedCornerShape(18.dp), opacity = .4f) {
+                GlassSurface(Modifier.width(44.dp).fillMaxHeight(), RoundedCornerShape(24.dp), opacity = .96f) {
                     Column(Modifier.fillMaxSize().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.SpaceBetween) {
                         CarGlyph(CarSymbol.Veloce, Modifier.size(22.dp), colors.primary)
-                        CarGlyph(CarSymbol.Home, Modifier.size(20.dp), colors.onSurfaceVariant)
+                        Box(Modifier.size(32.dp).background(colors.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                            CarGlyph(CarSymbol.Home, Modifier.size(20.dp), colors.onSecondaryContainer)
+                        }
                         Text(DateFormat.format(if (is24Hour) "HH:mm" else "h:mm", date).toString(),
                             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified))
                     }
@@ -196,14 +198,14 @@ internal fun CabinIllustration(modifier: Modifier = Modifier) {
                     GlassSurface(Modifier.weight(1f).fillMaxWidth(), RoundedCornerShape(20.dp)) {
                         CarGlyph(CarSymbol.Music, Modifier.align(Alignment.Center).size(30.dp), colors.primary)
                     }
-                    GlassSurface(Modifier.fillMaxWidth().height(40.dp), RoundedCornerShape(16.dp)) {
+                    GlassSurface(Modifier.fillMaxWidth().height(40.dp), CircleShape) {
                         Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                                 CarGlyph(CarSymbol.Previous, Modifier.size(23.dp), colors.onSurfaceVariant)
                             }
-                            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                                CarGlyph(CarSymbol.Pause, Modifier.size(20.dp), colors.primary)
+                            Box(Modifier.size(28.dp).background(colors.primary, CircleShape), contentAlignment = Alignment.Center) {
+                                CarGlyph(CarSymbol.Pause, Modifier.size(20.dp), colors.onPrimary)
                             }
                         }
                     }
@@ -215,10 +217,11 @@ internal fun CabinIllustration(modifier: Modifier = Modifier) {
 
 @Composable
 internal fun SetupProgress(step: Int) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         repeat(3) { index ->
             val progress by animateFloatAsState(if (index <= step) 1f else .12f, spring(), label = "Setup progress")
-            Box(Modifier.weight(1f).height(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = progress)))
+            Box(Modifier.weight(if (index == step) 2f else 1f).height(8.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = progress)))
         }
     }
 }

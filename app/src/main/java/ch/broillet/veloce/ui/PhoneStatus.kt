@@ -11,9 +11,12 @@ import android.os.BatteryManager
 import android.telephony.SignalStrength
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
+import android.text.format.DateFormat
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,8 +25,10 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ch.broillet.veloce.R
 
 private data class PhoneState(val battery: Int? = null, val charging: Boolean = false, val wifi: Boolean = false,
@@ -35,9 +40,9 @@ private val cellularIcons = listOf(R.drawable.ic_rounded_cellular_0, R.drawable.
     R.drawable.ic_rounded_cellular_2, R.drawable.ic_rounded_cellular_3, R.drawable.ic_rounded_cellular_4)
 
 @Composable
-internal fun PhoneStatus(modifier: Modifier = Modifier) {
+private fun rememberPhoneState(): State<PhoneState> {
     val context = LocalContext.current.applicationContext
-    val status by produceState(PhoneState(), context) {
+    return produceState(PhoneState(), context) {
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
         val telephony = context.getSystemService(TelephonyManager::class.java)
         var capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
@@ -79,29 +84,14 @@ internal fun PhoneStatus(modifier: Modifier = Modifier) {
             if (registered) telephony?.unregisterTelephonyCallback(signal)
         }
     }
-    val color = MaterialTheme.colorScheme.onSurface
-    val label = buildString {
-        append(status.battery?.let { "Battery $it percent" } ?: "Battery")
-        if (status.charging) append(", charging")
-        append(if (status.connected) if (status.wifi) ", Wi-Fi" else ", cellular" else ", offline")
-        status.networkLevel?.let { append(", signal $it of 4") }
-    }
-    val level = if (status.connected) (status.networkLevel ?: 0).coerceIn(0, 4) else 0
-    val networkIcon = (if (status.wifi) wifiIcons else cellularIcons)[level]
-    Row(modifier.semantics { contentDescription = label }, horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(networkIcon), contentDescription = null, modifier = Modifier.size(24.dp),
-            tint = if (status.connected) color else color.copy(alpha = .38f))
-        BatteryIndicator(status.battery, status.charging)
-    }
 }
 
 @Composable
 private fun BatteryIndicator(level: Int?, charging: Boolean) {
-    val color = MaterialTheme.colorScheme.onSurface
+    val color = LocalContentColor.current
     val battery = painterResource(R.drawable.ic_rounded_battery)
     val fraction = (level ?: 0).coerceIn(0, 100) / 100f
-    Box(Modifier.size(30.dp, 20.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(24.dp, 16.dp), contentAlignment = Alignment.Center) {
         Icon(battery, contentDescription = null, modifier = Modifier.fillMaxSize(), tint = color.copy(alpha = .28f))
         Icon(battery, contentDescription = null, modifier = Modifier.fillMaxSize().drawWithContent {
             clipRect(left = size.width * (880f - 800f * fraction) / 960f) { this@drawWithContent.drawContent() }
@@ -110,5 +100,35 @@ private fun BatteryIndicator(level: Int?, charging: Boolean) {
             Icon(painterResource(R.drawable.ic_rounded_bolt), contentDescription = null, modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.surface)
         }
+    }
+}
+
+@Composable
+internal fun CarSidebarStatus(compact: Boolean) {
+    val status by rememberPhoneState()
+    val clock by rememberClock()
+    val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(LocalContext.current)
+    val color = LocalContentColor.current
+    val label = buildString {
+        append(DateFormat.format(if (is24Hour) "HH:mm" else "h:mm a", clock))
+        append(status.battery?.let { ", battery $it percent" } ?: ", battery")
+        if (status.charging) append(", charging")
+        append(if (status.connected) if (status.wifi) ", Wi-Fi" else ", cellular" else ", offline")
+        status.networkLevel?.let { append(", signal $it of 4") }
+    }
+    val level = if (status.connected) (status.networkLevel ?: 0).coerceIn(0, 4) else 0
+    val networkIcon = (if (status.wifi) wifiIcons else cellularIcons)[level]
+    Column(Modifier.clearAndSetSemantics { contentDescription = label }, horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
+        Text(DateFormat.format(if (is24Hour) "HH:mm" else "h:mm", clock).toString(),
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = if (compact) 18.sp else 20.sp,
+                lineHeight = if (compact) 22.sp else 24.sp, fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp, fontFeatureSettings = "tnum"), maxLines = 1, softWrap = false)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(painterResource(networkIcon), contentDescription = null, modifier = Modifier.size(if (compact) 16.dp else 18.dp),
+                tint = if (status.connected) color else color.copy(alpha = .38f))
+            if (status.connected && status.wifi) Text("Wi-Fi", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.sp))
+        }
+        BatteryIndicator(status.battery, status.charging)
     }
 }

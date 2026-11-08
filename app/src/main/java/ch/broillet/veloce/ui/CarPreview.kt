@@ -6,12 +6,14 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -33,8 +35,9 @@ fun CarPreview(model: HomeModel, modifier: Modifier, close: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var custom by remember { mutableStateOf(false) }
     val spec = ScreenSpec(width, height, density)
-    Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SymbolTile(CarSymbol.Car)
             Text(stringResource(R.string.car_preview), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             TextButton(onClick = close) { Text(stringResource(R.string.close_preview)) }
         }
@@ -51,7 +54,7 @@ fun CarPreview(model: HomeModel, modifier: Modifier, close: () -> Unit) {
             }
         }
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            key(spec) { PreviewSurface(model, spec, Modifier.aspectRatio(width.toFloat() / height), close) }
+            key(spec) { PreviewSurface(model, spec, Modifier.aspectRatio(width.toFloat() / height).clip(RoundedCornerShape(24.dp)), close) }
         }
     }
     if (custom) ResolutionDialog(spec, { custom = false }) {

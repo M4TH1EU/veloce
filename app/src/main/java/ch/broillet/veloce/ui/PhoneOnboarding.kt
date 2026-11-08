@@ -49,7 +49,7 @@ internal fun PhoneOnboarding(model: HomeModel, mediaAccess: Boolean, openMediaAc
                         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                             SetupFeature(CarSymbol.Navigation, stringResource(R.string.welcome_navigation), stringResource(R.string.welcome_navigation_detail))
                             SetupFeature(CarSymbol.Music, stringResource(R.string.welcome_music), stringResource(R.string.welcome_music_detail))
-                            SetupFeature(CarSymbol.Action, stringResource(R.string.welcome_yours), stringResource(R.string.welcome_yours_detail))
+                            SetupFeature(CarSymbol.Palette, stringResource(R.string.welcome_yours), stringResource(R.string.welcome_yours_detail))
                         }
                     } else if (current == 1) {
                         SymbolTile(CarSymbol.Car, prominent = true)

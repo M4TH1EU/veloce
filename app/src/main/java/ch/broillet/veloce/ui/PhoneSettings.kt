@@ -7,7 +7,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -66,7 +65,10 @@ internal fun PhoneSettings(model: HomeModel, mediaAccess: Boolean, openMediaAcce
             PhonePanel {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     CabinIllustration()
-                    Text(stringResource(R.string.background_colors), style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CarGlyph(CarSymbol.Palette, Modifier.size(24.dp), MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.background_colors), style = MaterialTheme.typography.titleLarge)
+                    }
                     Text(stringResource(R.string.palette_description), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     LazyRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -178,23 +180,36 @@ internal fun PhoneSettings(model: HomeModel, mediaAccess: Boolean, openMediaAcce
 @Composable
 internal fun SettingsToggle(title: String, detail: String, checked: Boolean, change: (Boolean) -> Unit, enabled: Boolean = true) {
     Box(Modifier.toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = change)) {
-        SettingsRow(title, detail, enabled = enabled, trailing = { Switch(checked, onCheckedChange = null, enabled = enabled) })
+        SettingsRow(title, detail, enabled = enabled, trailing = {
+            Switch(checked, onCheckedChange = null, enabled = enabled, thumbContent = if (checked) ({
+                CarGlyph(CarSymbol.Check, Modifier.size(16.dp), MaterialTheme.colorScheme.onPrimaryContainer)
+            }) else null)
+        })
     }
 }
 
 @Composable
 private fun PaletteOption(palette: AppPalette, selected: Boolean, select: () -> Unit) {
-    val scale by animateFloatAsState(if (selected) 1.08f else 1f, spring(.75f, 450f), label = "Palette selection")
-    Column(Modifier.width(82.dp).clip(RoundedCornerShape(20.dp))
-        .selectable(selected, role = Role.RadioButton, onClick = select).padding(horizontal = 4.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(48.dp).graphicsLayer { scaleX = scale; scaleY = scale }.border(if (selected) 2.dp else 0.dp,
-            if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, CircleShape).padding(5.dp)
-            .background(palette.swatch(), CircleShape), contentAlignment = Alignment.Center) {
-            if (selected) CarGlyph(CarSymbol.Check, Modifier.size(22.dp), androidx.compose.ui.graphics.Color(0xFF242424))
+    val preview = paletteColors(palette, dark = true)
+    val scale by animateFloatAsState(if (selected) 1f else .9f, spring(.8f, 450f), label = "Palette selection")
+    Column(Modifier.width(88.dp).clip(RoundedCornerShape(24.dp))
+        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+        .selectable(selected, role = Role.RadioButton, onClick = select).padding(horizontal = 4.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.size(56.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape), contentAlignment = Alignment.Center) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().weight(1f).background(preview.primary))
+                Row(Modifier.weight(1f)) {
+                    Box(Modifier.weight(1f).fillMaxHeight().background(preview.secondaryContainer))
+                    Box(Modifier.weight(1f).fillMaxHeight().background(preview.tertiary))
+                }
+            }
+            if (selected) Box(Modifier.size(28.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
+                CarGlyph(CarSymbol.Check, Modifier.size(18.dp), MaterialTheme.colorScheme.onPrimary)
+            }
         }
         Text(stringResource(palette.label()), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -207,7 +222,8 @@ private fun <T> ChoiceDialog(title: String, detail: String, choices: List<Pair<T
             Column(Modifier.selectableGroup()) {
                 choices.forEach { (value, label) ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).selectable(value == selected, role = Role.RadioButton,
-                        onClick = { choose(value) }).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        onClick = { choose(value) }).background(if (value == selected) MaterialTheme.colorScheme.secondaryContainer
+                            else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(value == selected, onClick = null)
                         Text(label, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
                     }

@@ -1,6 +1,7 @@
 package ch.broillet.veloce.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.size
@@ -9,15 +10,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
@@ -33,7 +32,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-internal val LocalGlassOpacity = staticCompositionLocalOf { .64f }
+internal val LocalGlassOpacity = staticCompositionLocalOf { .76f }
 
 @Composable
 internal fun Modifier.carEntrance(destination: Any?): Modifier {
@@ -55,38 +54,29 @@ internal fun GlassSurface(
     enabled: Boolean = true,
     opacity: Float = LocalGlassOpacity.current,
     interactionSource: MutableInteractionSource? = null,
+    containerColor: Color = Color.Unspecified,
     content: @Composable BoxScope.() -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val interactions = interactionSource ?: remember { MutableInteractionSource() }
     val pressed = if (onClick != null || interactionSource != null) interactions.collectIsPressedAsState().value else false
-    val scale by animateFloatAsState(if (pressed) .96f else 1f, spring(dampingRatio = .8f, stiffness = 650f), label = "Glass press")
-    val backing = animateFloatAsState(opacity, tween(200), label = "Glass backing")
-    val highlight = animateFloatAsState(if (selected) .23f else .10f, tween(180), label = "Glass selection")
-    val accent = MaterialTheme.colorScheme.primary
-    val surface = MaterialTheme.colorScheme.surface
-    val edge = remember(focused, selected, accent) {
-        Brush.linearGradient(if (focused) listOf(accent, accent) else listOf(
-            Color.White.copy(alpha = if (selected) .5f else .28f),
-            Color.White.copy(alpha = .04f),
-            Color.White.copy(alpha = .14f),
-        ))
-    }
+    val scale by animateFloatAsState(if (pressed) .98f else 1f, spring(dampingRatio = 1f, stiffness = 650f), label = "Surface press")
+    val colors = MaterialTheme.colorScheme
+    val fill by androidx.compose.animation.animateColorAsState(when {
+        containerColor != Color.Unspecified -> containerColor
+        selected -> colors.secondaryContainer
+        else -> colors.surfaceContainerHigh
+    }.copy(alpha = if (selected) 1f else opacity), tween(180), label = "Surface tone")
     val decorated = modifier.graphicsLayer { scaleX = scale; scaleY = scale }.onFocusChanged { focused = it.hasFocus }
-        .border(if (focused) 2.dp else 1.dp, edge, shape)
+        .then(if (focused) Modifier.border(2.dp, colors.primary, shape) else Modifier)
     val body: @Composable () -> Unit = {
-        Box(Modifier.clip(shape).drawWithCache {
-            val fill = Brush.linearGradient(listOf(accent.copy(alpha = highlight.value),
-                Color.White.copy(alpha = .025f), Color.White.copy(alpha = .07f)))
-            onDrawBehind {
-                drawRect(surface.copy(alpha = backing.value))
-                drawRect(fill)
-            }
-        }, content = content)
+        Box(Modifier.graphicsLayer { alpha = if (enabled) 1f else .38f }, content = content)
     }
-    if (onClick == null) Surface(decorated, shape, Color.Transparent, content = body)
+    val contentColor = if (selected) colors.onSecondaryContainer else colors.onSurface
+    val edge = BorderStroke(.5.dp, colors.onSurface.copy(alpha = if (selected) .12f else .06f))
+    if (onClick == null) Surface(decorated, shape, fill, contentColor = contentColor, border = edge, content = body)
     else Surface(onClick = onClick, modifier = decorated, enabled = enabled, shape = shape,
-        interactionSource = interactions, color = Color.Transparent, content = body)
+        interactionSource = interactions, color = fill, contentColor = contentColor, border = edge, content = body)
 }
 
 @Composable
@@ -97,17 +87,36 @@ internal fun GlassIconButton(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     enabled: Boolean = true,
-    size: Dp = 64.dp,
+    size: Dp = 68.dp,
     iconSize: Dp = 30.dp,
     opacity: Float = LocalGlassOpacity.current,
+    prominent: Boolean = false,
 ) {
-    GlassSurface(modifier.size(size).semantics {
+    val colors = MaterialTheme.colorScheme
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    var focused by remember { mutableStateOf(false) }
+    val corner by animateDpAsState(if (pressed) size * .25f else if (prominent && symbol == CarSymbol.Pause) size * .28f else size / 2,
+        spring(1f, 650f), label = "Icon button shape")
+    val shape = RoundedCornerShape(corner)
+    val fill = when {
+        prominent -> colors.primary
+        selected -> colors.secondaryContainer
+        else -> colors.surfaceContainerHigh.copy(alpha = opacity)
+    }
+    val ink = when {
+        prominent -> colors.onPrimary
+        selected -> colors.onSecondaryContainer
+        else -> colors.onSurfaceVariant
+    }
+    FilledIconButton(onClick, modifier.size(size).onFocusChanged { focused = it.hasFocus }
+        .then(if (focused) Modifier.border(2.dp, colors.primary, shape) else Modifier).semantics {
         contentDescription = label
         role = Role.Button
         this.selected = selected
-    }, RoundedCornerShape(size * .38f), selected, onClick, enabled, opacity = opacity) {
-        CarGlyph(symbol, Modifier.size(iconSize).align(Alignment.Center),
-            if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = .28f))
+    }, enabled = enabled, shape = shape, interactionSource = interactions,
+        colors = IconButtonDefaults.filledIconButtonColors(containerColor = fill, contentColor = ink)) {
+        CarGlyph(symbol, Modifier.size(iconSize), LocalContentColor.current)
     }
 }
 
@@ -115,9 +124,9 @@ internal fun GlassIconButton(
 internal fun Modifier.cabinBackground(): Modifier {
     val colors = MaterialTheme.colorScheme
     return drawWithCache {
-        val base = Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surfaceContainerLowest))
-        val light = Brush.radialGradient(listOf(colors.primary.copy(alpha = .055f), Color.Transparent),
-            Offset(size.width * .45f, 0f), maxOf(size.width, size.height) * .75f)
+        val light = Brush.radialGradient(listOf(colors.primary.copy(alpha = .035f), Color.Transparent),
+            Offset(size.width * .8f, 0f), maxOf(size.width, size.height) * .85f)
+        val base = Brush.verticalGradient(listOf(colors.surfaceContainerLowest, colors.background))
         onDrawBehind {
             drawRect(base)
             drawRect(light)

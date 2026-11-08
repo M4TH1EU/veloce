@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import ch.broillet.veloce.media.MediaArtwork
 import ch.broillet.veloce.media.MediaAction
 import androidx.core.graphics.drawable.toBitmap
@@ -108,17 +109,18 @@ internal fun ArtworkTransition(bitmap: Bitmap?, modifier: Modifier, content: @Co
 }
 
 @Composable
-internal fun AlbumBackdrop(bitmap: Bitmap?, modifier: Modifier = Modifier) {
+internal fun AlbumBackdrop(bitmap: Bitmap?, modifier: Modifier = Modifier, radius: Dp = 48.dp, subdued: Boolean = false) {
     Box(modifier.clipToBounds()) {
         ArtworkTransition(bitmap, Modifier.fillMaxSize()) { art, layer ->
             if (art != null) {
                 Image(art.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
                     modifier = layer.graphicsLayer { scaleX = 1.25f; scaleY = 1.25f }
-                        .blur(56.dp, BlurredEdgeTreatment.Unbounded))
+                        .blur(radius, BlurredEdgeTreatment.Unbounded))
             } else Box(layer.cabinBackground())
         }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .52f)))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .55f)))))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = LocalAlbumScrim.current)))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .06f), Color.Black.copy(alpha = .42f)))))
+        if (subdued) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f)))
     }
 }
 

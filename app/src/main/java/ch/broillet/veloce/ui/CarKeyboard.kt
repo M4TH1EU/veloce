@@ -57,6 +57,7 @@ private fun CarKeyboard(request: CarKeyboardRequest, close: () -> Unit) {
     var value by remember { mutableStateOf(TextFieldValue(request.text, TextRange(request.text.length))) }
     var upper by remember { mutableStateOf(false) }
     var symbols by remember { mutableStateOf(false) }
+    val layout = rememberPhoneKeyboardLayout()
     val focus = remember { FocusRequester() }
     fun replace(text: String) {
         val start = value.selection.min
@@ -82,34 +83,35 @@ private fun CarKeyboard(request: CarKeyboardRequest, close: () -> Unit) {
                 replace(String(Character.toChars(it))); true
             } ?: false
         }
-    }.focusRequester(focus).focusable(), shape = RoundedCornerShape(28.dp),
+    }.focusRequester(focus).focusable(), shape = RoundedCornerShape(36.dp),
         color = MaterialTheme.colorScheme.surfaceContainer) {
         BoxWithConstraints(Modifier.padding(16.dp)) {
-            val keyHeight = ((maxHeight - 164.dp) / 4).coerceIn(40.dp, 60.dp)
+            val keyHeight = ((maxHeight - 164.dp) / 4).coerceIn(40.dp, 76.dp)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TextField(value, { value = it }, Modifier.weight(1f), readOnly = true, singleLine = true,
+                    TextField(value, { value = it }, Modifier.weight(1f), readOnly = true, singleLine = true, shape = RoundedCornerShape(20.dp),
                         placeholder = { Text(request.hint) }, textStyle = MaterialTheme.typography.titleLarge)
-                    GlassIconButton(CarSymbol.Close, stringResource(R.string.close_keyboard), close, size = 56.dp)
+                    GlassIconButton(CarSymbol.Close, stringResource(R.string.close_keyboard), close)
                 }
                 val rows = if (symbols) listOf("1234567890", "@#€%&*()-", "!\"':;/?.,")
-                    else listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+                    else layout.rows
                 rows.forEachIndexed { index, letters ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = if (index == 1) 20.dp else 0.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (index == 2 && !symbols) KeyboardKey("⇧", { upper = !upper }, Modifier.weight(1.3f).height(keyHeight), upper,
-                            stringResource(R.string.keyboard_shift))
+                        if (index == 2 && !symbols) KeyboardKey("", { upper = !upper }, Modifier.weight(1.3f).height(keyHeight), upper,
+                            stringResource(R.string.keyboard_shift), CarSymbol.Shift)
                         letters.forEach { letter ->
-                            val text = if (upper) letter.uppercase() else letter.toString()
+                            val text = if (upper) letter.toString().uppercase(layout.locale) else letter.toString()
                             KeyboardKey(text, { replace(text) }, Modifier.weight(1f).height(keyHeight))
                         }
-                        if (index == 2) KeyboardKey("⌫", ::erase, Modifier.weight(1.3f).height(keyHeight),
-                            label = stringResource(R.string.keyboard_delete))
+                        if (index == 2) KeyboardKey("", ::erase, Modifier.weight(1.3f).height(keyHeight),
+                            label = stringResource(R.string.keyboard_delete), symbol = CarSymbol.Backspace)
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     KeyboardKey(if (symbols) "ABC" else "123", { symbols = !symbols }, Modifier.weight(1.3f).height(keyHeight))
-                    KeyboardKey(stringResource(R.string.keyboard_space), { replace(" ") }, Modifier.weight(4f).height(keyHeight))
+                    KeyboardKey(layout.locale.getDisplayLanguage(layout.locale), { replace(" ") }, Modifier.weight(4f).height(keyHeight),
+                        label = stringResource(R.string.keyboard_space))
                     KeyboardKey(stringResource(R.string.search), { request.submit(value.text); close() },
                         Modifier.weight(2f).height(keyHeight), selected = true)
                 }
@@ -119,9 +121,10 @@ private fun CarKeyboard(request: CarKeyboardRequest, close: () -> Unit) {
 }
 
 @Composable
-private fun KeyboardKey(text: String, click: () -> Unit, modifier: Modifier, selected: Boolean = false, label: String = text) {
-    GlassSurface(modifier.semantics { contentDescription = label }, RoundedCornerShape(14.dp), onClick = click, selected = selected, opacity = .98f) {
-        Text(text, Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface)
+private fun KeyboardKey(text: String, click: () -> Unit, modifier: Modifier, selected: Boolean = false, label: String = text, symbol: CarSymbol? = null) {
+    GlassSurface(modifier.semantics { contentDescription = label }, RoundedCornerShape(if (selected) 28.dp else 12.dp),
+        onClick = click, selected = selected, opacity = 1f) {
+        if (symbol != null) CarGlyph(symbol, Modifier.size(28.dp).align(Alignment.Center), LocalContentColor.current)
+        else Text(text, Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleLarge)
     }
 }

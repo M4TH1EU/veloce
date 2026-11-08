@@ -45,12 +45,13 @@ fun VeloceApp(model: HomeModel, connectUsb: () -> Unit, connectWireless: () -> U
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
                 if (!onboarding && page != PhonePage.PREVIEW) NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
                     listOf(PhonePage.HOME to R.string.drive, PhonePage.SETTINGS to R.string.settings).forEach { (destination, label) ->
                         NavigationBarItem(selected = page == destination, onClick = { page = destination },
-                            icon = { CarGlyph(if (destination == PhonePage.HOME) CarSymbol.Car else CarSymbol.Action,
+                            icon = { CarGlyph(if (destination == PhonePage.HOME) CarSymbol.Car else CarSymbol.Settings,
                                 Modifier.size(24.dp), if (page == destination) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) },
-                            label = { Text(stringResource(label)) })
+                            label = { Text(stringResource(label)) },
+                            colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer))
                     }
                 }
             }) { insets ->

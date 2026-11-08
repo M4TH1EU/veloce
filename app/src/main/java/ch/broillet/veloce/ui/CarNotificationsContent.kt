@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.broillet.veloce.R
 import ch.broillet.veloce.notifications.CarNotifications
+import ch.broillet.veloce.notifications.CarNotice
 import kotlinx.coroutines.delay
 import java.util.Date
 
@@ -25,8 +26,8 @@ fun CarNotificationsContent(notifications: CarNotifications, modifier: Modifier 
     val connected by notifications.connected.collectAsStateWithLifecycle()
     if (!connected || notices.isEmpty()) {
         Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            GlassSurface(Modifier.size(88.dp), RoundedCornerShape(32.dp)) {
-                CarGlyph(CarSymbol.Bell, Modifier.size(36.dp).align(Alignment.Center), MaterialTheme.colorScheme.primary)
+            GlassSurface(Modifier.size(96.dp), RoundedCornerShape(32.dp), containerColor = MaterialTheme.colorScheme.primaryContainer) {
+                CarGlyph(CarSymbol.Bell, Modifier.size(44.dp).align(Alignment.Center), MaterialTheme.colorScheme.onPrimaryContainer)
             }
             Spacer(Modifier.height(20.dp))
             Text(stringResource(if (connected) R.string.all_caught_up else R.string.notifications), style = MaterialTheme.typography.headlineSmall)
@@ -37,29 +38,29 @@ fun CarNotificationsContent(notifications: CarNotifications, modifier: Modifier 
         }
         return
     }
-    val context = LocalContext.current
-    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 4.dp)) {
+    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 8.dp)) {
         items(notices, key = { it.key }) { notice ->
-            GlassSurface {
-                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PackageIcon(notice.packageName, Modifier.size(30.dp))
-                        Text(notice.app, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(context)
-                        val time = android.text.format.DateFormat.format(if (is24Hour) "HH:mm" else "h:mm a", Date(notice.postedAt)).toString()
-                        Text(time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        GlassSurface(onClick = { notifications.remove(notice.key) }, shape = RoundedCornerShape(24.dp)) {
-                            Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 20.dp), contentAlignment = Alignment.Center) {
-                                Text(stringResource(R.string.hide_notification), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
-                    }
-                    if (notice.title.isNotBlank()) Text(notice.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (notice.text.isNotBlank()) Text(notice.text, style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .8f), maxLines = 4, overflow = TextOverflow.Ellipsis)
-                }
+            CarNotificationCard(notice) { notifications.remove(notice.key) }
+        }
+    }
+}
+
+@Composable
+private fun CarNotificationCard(notice: CarNotice, hide: () -> Unit) {
+    val is24Hour = LocalAppSettings.current.clockFormat.is24Hour(LocalContext.current)
+    val time = android.text.format.DateFormat.format(if (is24Hour) "HH:mm" else "h:mm a", Date(notice.postedAt)).toString()
+    GlassSurface {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PackageIcon(notice.packageName, Modifier.size(36.dp))
+                Text(notice.app, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                GlassIconButton(CarSymbol.Close, stringResource(R.string.hide_notification), hide, size = 48.dp, iconSize = 24.dp, opacity = 0f)
             }
+            if (notice.title.isNotBlank()) Text(notice.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (notice.text.isNotBlank()) Text(notice.text, style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -76,15 +77,16 @@ fun CarNotificationBanner(notifications: CarNotifications, open: () -> Unit, mod
     if (remaining <= 0) return
     GlassSurface(onClick = { notifications.dismissAlert(current.sequence); open() },
         modifier = modifier.widthIn(max = 600.dp).fillMaxWidth(), selected = true, opacity = 1f) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            PackageIcon(current.notice.packageName, Modifier.size(40.dp))
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            PackageIcon(current.notice.packageName, Modifier.size(48.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(current.notice.app, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.primary)
                 Text(current.notice.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(current.notice.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            TextButton(onClick = { notifications.dismissAlert(current.sequence) }) { Text(stringResource(R.string.hide_notification)) }
+            GlassIconButton(CarSymbol.Close, stringResource(R.string.hide_notification), { notifications.dismissAlert(current.sequence) },
+                size = 48.dp, iconSize = 24.dp, opacity = 0f)
         }
     }
 }
